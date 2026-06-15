@@ -144,6 +144,7 @@ class RAGGeneratorV2:
                 "page_number": citation.get("page_number"),
                 "chunk_id": result["id"],
                 "relevance_score": result["score"],
+                "text": result["content"][:300],  # Source text for citation hover
             })
 
         return "\n\n".join(context_parts), sources_info
