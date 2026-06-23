@@ -17,7 +17,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from fastapi.background import BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -289,6 +289,7 @@ async def upload_files(
 
     results = []
     for uploaded_file in files:
+        temp_path = None
         try:
             suffix = Path(uploaded_file.filename or "").suffix
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -310,11 +311,17 @@ async def upload_files(
                     "chunks": len(chunks),
                 }, notebook_id=notebook_id)
                 results.append({"file": uploaded_file.filename, "chunks": len(chunks), "status": "ok"})
-
-            os.unlink(temp_path)
+            else:
+                results.append({"file": uploaded_file.filename, "error": "No content extracted"})
         except Exception as e:
             logger.error(f"Upload error for {uploaded_file.filename}: {e}")
             results.append({"file": uploaded_file.filename, "error": str(e)})
+        finally:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
 
     return {"results": results}
 
@@ -336,6 +343,7 @@ async def add_urls(request: URLRequest):
                 _memory.save_source({
                     "name": source_name, "type": "Website",
                     "size": f"{len(chunks)} chunks", "chunks": len(chunks),
+                    "url": url,
                 }, notebook_id=request.notebook_id)
                 results.append({"url": url, "title": source_name, "chunks": len(chunks), "status": "ok"})
             else:
@@ -361,6 +369,7 @@ async def add_youtube(request: YouTubeRequest):
             _memory.save_source({
                 "name": source_name, "type": "YouTube",
                 "size": f"{len(chunks)} chunks", "chunks": len(chunks),
+                "url": request.url,
             }, notebook_id=request.notebook_id)
             return {"title": source_name, "chunks": len(chunks), "status": "ok"}
         raise HTTPException(status_code=400, detail="No transcript found")
@@ -389,7 +398,7 @@ async def delete_source(source_id: int):
         if _vector_db and source_info:
             _vector_db.delete_by_source(
                 source_file=source_info["name"],
-                notebook_id=source_info.get("notebook_id"),
+                notebook_id=source_info["notebook_id"],
             )
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Source not found")
@@ -437,54 +446,9 @@ async def clear_history(notebook_id: int = Query(1)):
     return {"status": "ok"}
 
 
-# ─── Streaming Chat ────────────────────────────────────────────────────────────
-
-@app.post("/api/chat/stream")
-async def chat_stream(request: ChatRequest):
-    """Stream a chat response using Server-Sent Events."""
-    import json as _json
-
-    if not _rag_generator:
-        raise HTTPException(status_code=503, detail="Not initialized")
-
-    conv_context = _memory.get_conversation_context(
-        notebook_id=request.notebook_id, max_turns=5,
-    )
-
-    # Use the RAG pipeline for retrieval, but stream the generation
-    result = _rag_generator.generate_response(
-        query=request.query,
-        notebook_id=request.notebook_id,
-        conversation_context=conv_context,
-    )
-
-    _memory.save_conversation_turn(result, notebook_id=request.notebook_id)
-
-    async def event_generator():
-        # Send sources first
-        yield f"data: {_json.dumps({'type': 'sources', 'sources_used': result.sources_used, 'retrieval_count': result.retrieval_count})}\n\n"
-
-        # Stream the response in chunks to simulate streaming
-        # (True streaming requires refactoring LLM router to yield tokens)
-        words = result.response.split(' ')
-        chunk_size = 3  # Send 3 words at a time for smooth streaming
-        for i in range(0, len(words), chunk_size):
-            chunk = ' '.join(words[i:i + chunk_size])
-            if i + chunk_size < len(words):
-                chunk += ' '
-            yield f"data: {_json.dumps({'type': 'token', 'content': chunk})}\n\n"
-
-        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+# NOTE: /api/chat/stream removed — was fake streaming (generated full response
+# synchronously then split into 3-word chunks). The frontend now uses /api/chat.
+# True streaming would require the LLM router to yield tokens.
 
 
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
@@ -555,13 +519,10 @@ async def get_source_content(source_id: int, notebook_id: int = Query(1)):
     if not source_info:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    # Query all chunks for this source from Milvus
-    query_vector = _embedding_generator.generate_query_embedding(source_info["name"])
-    results = _vector_db.search(
-        query_vector=query_vector.tolist(),
-        limit=100,
+    # Use exact query (no vector search needed) to get all chunks for this source
+    results = _vector_db.query_by_source(
+        source_file=source_info["name"],
         notebook_id=notebook_id,
-        filter_expr=f'source_file == "{source_info["name"]}"',
     )
 
     # Sort by chunk_index
@@ -667,17 +628,17 @@ async def compare_sources(request: CompareRequest):
     if len(request.source_names) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 sources to compare")
 
-    # Get chunks from each source
+    # Get chunks from each source using exact query (not semantic search)
     source_contents = {}
     for name in request.source_names:
-        query_vector = _embedding_generator.generate_query_embedding(name)
-        results = _vector_db.search(
-            query_vector=query_vector.tolist(),
-            limit=5,
+        results = _vector_db.query_by_source(
+            source_file=name,
             notebook_id=request.notebook_id,
-            filter_expr=f'source_file == "{name}"',
+            limit=10,
         )
-        source_contents[name] = "\n".join([r["content"][:500] for r in results])
+        # Sort by chunk_index to get representative content in order
+        results.sort(key=lambda x: x.get("citation", {}).get("chunk_index", 0))
+        source_contents[name] = "\n".join([r["content"][:500] for r in results[:5]])
 
     # Build comparison prompt
     sources_text = ""
@@ -760,17 +721,8 @@ async def refresh_source(request: RefreshSourceRequest):
     if source_type not in ("Website", "YouTube"):
         raise HTTPException(status_code=400, detail="Can only refresh Website and YouTube sources")
 
-    # Get the URL from source metadata
-    # Look up the source metadata from memory
-    cursor = _memory.conn.cursor()
-    cursor.execute("SELECT metadata_json FROM sources WHERE id = ?", (request.source_id,))
-    row = cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Source metadata not found")
-
-    import json as _json
-    metadata = _json.loads(row["metadata_json"] or "{}")
-    # The URL might be in the metadata or we can try to find it from the chunks
+    # Get the URL from source metadata (using proper API, not raw cursor)
+    metadata = source_info.get("metadata", {})
     source_name = source_info["name"]
 
     # Delete old vectors
@@ -795,10 +747,9 @@ async def refresh_source(request: RefreshSourceRequest):
         if chunks:
             embedded = _embedding_generator.generate_embeddings(chunks)
             _vector_db.insert_embeddings(embedded, notebook_id=request.notebook_id)
-            # Update source metadata
-            _memory.delete_source(request.source_id)
+            # Update source in-place (preserves the source ID)
             new_source_name = chunks[0].source_file
-            _memory.save_source({
+            _memory.update_source(request.source_id, {
                 "name": new_source_name,
                 "type": source_type,
                 "size": f"{len(chunks)} chunks",

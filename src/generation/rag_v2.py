@@ -262,7 +262,12 @@ Rules:
                 search_query = self._hyde_rewrite(query)
 
             # ── Step 2: Vector search (notebook-isolated) ──────────────
-            query_vector = self._get_cached_embedding(search_query)
+            # Cache embedding under original query (HyDE text is non-deterministic)
+            if use_hyde and search_query != query:
+                # Generate fresh embedding for HyDE text (don't cache it)
+                query_vector = self.embedding_generator.generate_query_embedding(search_query)
+            else:
+                query_vector = self._get_cached_embedding(query)
             vector_results = self.vector_db.search(
                 query_vector=query_vector.tolist(),
                 limit=top_k,

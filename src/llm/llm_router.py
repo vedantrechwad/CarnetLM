@@ -53,6 +53,7 @@ class LLMRouter:
         self._http_client = httpx.Client(timeout=120.0)
         self._ollama_process = None  # Track the subprocess we started
         self._gemini_client = None  # Reusable Gemini client
+        self._force_provider = None  # User-selected provider override
 
         # Validate the key isn't a placeholder
         if self.gemini_api_key and "your_" in self.gemini_api_key.lower():
@@ -170,13 +171,27 @@ class LLMRouter:
             return []
 
     def set_model(self, model_name: str) -> bool:
-        """Switch the active Ollama model."""
+        """Switch the active model. Supports both Ollama models and Gemini."""
+        # Handle Gemini selection
+        if model_name.startswith("gemini"):
+            if self.gemini_available:
+                # Gemini is already the primary provider; this is a no-op
+                # but we set a flag so get_active_provider() returns 'gemini'
+                self._force_provider = "gemini"
+                logger.info(f"Active model switched to: {model_name} (Gemini API)")
+                return True
+            else:
+                logger.error("Gemini API not available")
+                return False
+
+        # Handle Ollama model selection
         models = self.list_models()
         model_names = [m["name"] for m in models]
         if model_name not in model_names:
             logger.error(f"Model '{model_name}' not found. Available: {model_names}")
             return False
         self.ollama_model = model_name
+        self._force_provider = "ollama"  # User explicitly chose an Ollama model
         logger.info(f"Active model switched to: {model_name}")
         return True
 
@@ -189,23 +204,39 @@ class LLMRouter:
         temperature: float = 0.1,
         max_tokens: int = 2000,
     ) -> LLMResponse:
-        """Generate a response, trying Gemini first, then Ollama."""
+        """Generate a response. Respects user's model choice if set, otherwise Gemini-first."""
 
-        # Try Gemini first
-        if self.gemini_available:
-            try:
-                return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
-            except Exception as e:
-                logger.warning(f"Gemini failed ({e}), trying Ollama fallback...")
+        # If user explicitly chose Ollama, try Ollama first
+        if self._force_provider == "ollama":
+            self.ollama_available = self._check_ollama()
+            if self.ollama_available:
+                try:
+                    return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+                except Exception as e:
+                    logger.warning(f"Ollama failed ({e}), trying Gemini fallback...")
+            # Fallback to Gemini
+            if self.gemini_available:
+                try:
+                    return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
+                except Exception as e:
+                    logger.error(f"Gemini also failed: {e}")
+                    raise
+        else:
+            # Default: Try Gemini first
+            if self.gemini_available:
+                try:
+                    return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
+                except Exception as e:
+                    logger.warning(f"Gemini failed ({e}), trying Ollama fallback...")
 
-        # Fallback to Ollama
-        self.ollama_available = self._check_ollama()
-        if self.ollama_available:
-            try:
-                return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
-            except Exception as e:
-                logger.error(f"Ollama also failed: {e}")
-                raise
+            # Fallback to Ollama
+            self.ollama_available = self._check_ollama()
+            if self.ollama_available:
+                try:
+                    return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+                except Exception as e:
+                    logger.error(f"Ollama also failed: {e}")
+                    raise
 
         raise ConnectionError(
             "No LLM provider available. Set GEMINI_API_KEY in .env or start Ollama (ollama serve)."
@@ -301,6 +332,11 @@ class LLMRouter:
 
     def get_active_provider(self) -> str:
         """Return which provider will handle the next request."""
+        if self._force_provider == "ollama" and self.ollama_available:
+            return "ollama"
+        if self._force_provider == "gemini" and self.gemini_available:
+            return "gemini"
+        # Default priority
         if self.gemini_available:
             return "gemini"
         if self.ollama_available:

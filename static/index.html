@@ -94,7 +94,7 @@
         /* Citation badges */
         .citation-ref { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #1b1b1b; font-size: 0.5625rem; font-weight: 700; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 3px; vertical-align: middle; margin: 0 1px; cursor: pointer; }
         /* Global floating citation tooltip */
-        #citationTooltip { display: none; position: fixed; background: var(--bg-secondary); border: 1px solid var(--border); padding: 0.75rem 0.875rem; border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-secondary); width: 340px; max-height: 200px; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 1000; line-height: 1.5; pointer-events: none; }
+        #citationTooltip { display: none; position: fixed; background: var(--bg-secondary); border: 1px solid var(--border); padding: 0.75rem 0.875rem; border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-secondary); width: 340px; max-height: 200px; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 1000; line-height: 1.5; }
         #citationTooltip.visible { display: block; }
         #citationTooltip .ct-header { font-weight: 600; color: var(--accent); margin-bottom: 0.375rem; font-size: 0.6875rem; }
         #citationTooltip .ct-text { color: var(--text-secondary); }
@@ -601,19 +601,21 @@ function doAddToNote() {
 }
 
 function showNotePickerForText(text) {
+    window._pendingNoteTexts = window._pendingNoteTexts || {};
+    const textId = 'nt_' + Date.now();
+    window._pendingNoteTexts[textId] = text;
     const sel = document.getElementById('noteSelector');
-    const enc = btoa(encodeURIComponent(text));
-    let html = notes.map(n => `<div class="note-selector-item" onclick="appendToNoteAndOpen(${n.id}, '${enc}')">${esc(n.title)}</div>`).join('');
-    html += `<div class="note-selector-item note-selector-new" onclick="openNewNoteModal('${enc}')">+ New Note</div>`;
+    let html = notes.map(n => `<div class="note-selector-item" onclick="appendToNoteAndOpen(${n.id}, '${textId}')">${esc(n.title)}</div>`).join('');
+    html += `<div class="note-selector-item note-selector-new" onclick="openNewNoteModal('${textId}')">+ New Note</div>`;
     sel.innerHTML = html;
     sel.style.top = '50%'; sel.style.left = '50%'; sel.style.transform = 'translate(-50%,-50%)';
     sel.classList.add('active');
     setTimeout(() => document.addEventListener('click', () => sel.classList.remove('active'), { once: true }), 10);
 }
 
-function openNewNoteModal(enc) {
+function openNewNoteModal(textId) {
     document.getElementById('noteSelector').classList.remove('active');
-    window._pendingNoteText = decodeURIComponent(atob(enc));
+    window._pendingNoteText = (window._pendingNoteTexts && window._pendingNoteTexts[textId]) || '';
     document.getElementById('newNoteNameInput').value = '';
     openModal('newNote');
     document.getElementById('newNoteNameInput').focus();
@@ -626,8 +628,8 @@ async function saveNewNoteFromChat() {
     closeModals(); await loadNotes();
 }
 
-async function appendToNoteAndOpen(noteId, enc) {
-    const text = decodeURIComponent(atob(enc));
+async function appendToNoteAndOpen(noteId, textId) {
+    const text = (window._pendingNoteTexts && window._pendingNoteTexts[textId]) || '';
     document.getElementById('noteSelector').classList.remove('active');
     await fetch(`${API}/api/notes/${noteId}/append`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text }) });
     await loadNotes();
@@ -715,75 +717,27 @@ async function sendMessage(e) {
     e.preventDefault(); const input=document.getElementById('chatInput'); let query=input.value.trim(); if (!query||isLoading) return;
     // Add followup context
     if (followupContext) { query = `Regarding this text: "${followupContext}"\n\n${query}`; clearFollowup(); }
-    chatHistory.push({role:'user',content:input.value.trim(),sources:[]});
+    chatHistory.push({role:'user',content:query,sources:[]});
     renderChat(); input.value=''; isLoading=true; document.getElementById('sendBtn').disabled=true;
     const msgs=document.getElementById('chatMessages');
     const ld=document.createElement('div'); ld.className='msg-loading'; ld.innerHTML='<div class="loading-dots"><span></span><span></span><span></span></div>&nbsp; Thinking...'; msgs.appendChild(ld); msgs.scrollTop=msgs.scrollHeight;
 
     try {
-        // Try streaming first
-        const r = await fetch(`${API}/api/chat/stream`, {
+        const r = await fetch(`${API}/api/chat`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({query, notebook_id: activeNotebookId})
         });
 
-        if (r.ok && r.headers.get('content-type')?.includes('text/event-stream')) {
-            // Stream the response
-            const reader = r.body.getReader();
-            const decoder = new TextDecoder();
-            let streamedContent = '';
-            let streamSources = [];
-
-            // Remove loading indicator and add streaming message
+        if (r.ok) {
             ld.remove();
-            const streamDiv = document.createElement('div');
-            streamDiv.className = 'msg msg-assistant msg-streaming';
-            streamDiv.innerHTML = '<div class="msg-bubble"></div>';
-            msgs.appendChild(streamDiv);
-            const bubble = streamDiv.querySelector('.msg-bubble');
-
-            let buffer = '';
-            while (true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, {stream: true});
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.type === 'sources') {
-                                streamSources = data.sources_used || [];
-                            } else if (data.type === 'token') {
-                                streamedContent += data.content;
-                                bubble.innerHTML = formatResponse(streamedContent, streamSources);
-                                msgs.scrollTop = msgs.scrollHeight;
-                            } else if (data.type === 'done') {
-                                // Finalize
-                                streamDiv.classList.remove('msg-streaming');
-                            }
-                        } catch {}
-                    }
-                }
-            }
-
-            // Add source tags and action buttons
-            if (streamSources.length) {
-                const uniq = [...new Map(streamSources.map(s=>[s.source_file,s])).values()];
-                bubble.innerHTML += `<div class="msg-sources">${uniq.map(s=>`<span class="msg-source-tag">${esc(s.source_file)}</span>`).join('')}</div>`;
-            }
-            const idx = chatHistory.length;
-            chatHistory.push({role:'assistant', content:streamedContent, sources:streamSources});
-            streamDiv.innerHTML += `<div class="msg-actions"><button class="msg-action-btn" onclick="speakText(this,${idx})" title="Read aloud">🔊</button><button class="msg-action-btn" onclick="showNoteSelector(event,${idx})" title="Save to note">📝 Note</button></div>`;
-
-        } else {
-            // Fallback to non-streaming
             const d = await r.json();
             chatHistory.push({role:'assistant',content:d.response,sources:d.sources_used||[]});
+            renderChat();
+        } else {
+            ld.remove();
+            const e = await r.json();
+            chatHistory.push({role:'assistant',content:`Error: ${e.detail || 'Unknown error'}`,sources:[]});
             renderChat();
         }
     } catch(err) {
@@ -941,7 +895,7 @@ async function doSearch() {
             body.innerHTML = d.results.map(r => `<div class="search-result-item">
                 <div class="search-result-source">${esc(r.source_file)} ${r.page_number ? '• Page '+r.page_number : ''}</div>
                 <div class="search-result-text">${esc(r.content)}</div>
-                <div class="search-result-score">Relevance: ${(r.score*100).toFixed(1)}%</div>
+                <div class="search-result-score">Relevance: ${(1 / (1 + r.score) * 100).toFixed(1)}%</div>
             </div>`).join('');
         } else {
             body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">No results found</div>';

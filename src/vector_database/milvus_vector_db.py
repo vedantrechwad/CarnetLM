@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 from typing import List, Dict, Any, Optional
 import json
 
@@ -195,8 +196,8 @@ class MilvusVectorDB:
             data = []
             for embedded_chunk in embedded_chunks:
                 chunk_data = embedded_chunk.to_vector_db_format()
-                # Add timestamp to chunk ID to prevent duplicates on re-upload
-                chunk_data['id'] = f"{chunk_data['id']}_{int(time.time() * 1000)}"
+                # Use UUID to prevent duplicates on re-upload
+                chunk_data['id'] = f"{chunk_data['id']}_{uuid.uuid4().hex[:12]}"
                 chunk_data['page_number'] = chunk_data['page_number'] or -1
                 chunk_data['start_char'] = chunk_data['start_char'] or -1
                 chunk_data['end_char'] = chunk_data['end_char'] or -1
@@ -295,6 +296,54 @@ class MilvusVectorDB:
         except Exception as e:
             logger.error(f"Error during search: {str(e)}")
             raise
+
+    def query_by_source(
+        self,
+        source_file: str,
+        notebook_id: Optional[int] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """Get all chunks for a source using exact filtering (no vector query needed)."""
+        try:
+            filter_expr = f'source_file == "{source_file}"'
+            if notebook_id is not None:
+                filter_expr += f' and notebook_id == {notebook_id}'
+
+            results = self.client.query(
+                collection_name=self.collection_name,
+                filter=filter_expr,
+                output_fields=[
+                    "content", "source_file", "source_type", "page_number",
+                    "chunk_index", "start_char", "end_char", "metadata", "embedding_model",
+                    "notebook_id"
+                ],
+                limit=limit,
+            )
+
+            formatted = []
+            for r in results:
+                formatted.append({
+                    'id': r.get('id', ''),
+                    'score': 0,
+                    'content': r.get('content', ''),
+                    'citation': {
+                        'source_file': r.get('source_file', ''),
+                        'source_type': r.get('source_type', ''),
+                        'page_number': r.get('page_number') if r.get('page_number', -1) != -1 else None,
+                        'chunk_index': r.get('chunk_index', 0),
+                        'start_char': r.get('start_char') if r.get('start_char', -1) != -1 else None,
+                        'end_char': r.get('end_char') if r.get('end_char', -1) != -1 else None,
+                    },
+                    'metadata': r.get('metadata', {}),
+                    'embedding_model': r.get('embedding_model', ''),
+                })
+
+            logger.info(f"Query by source '{source_file}': {len(formatted)} results")
+            return formatted
+
+        except Exception as e:
+            logger.error(f"Error querying by source: {e}")
+            return []
     
     def delete_collection(self):
         try:

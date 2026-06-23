@@ -42,9 +42,9 @@ class DocumentChunk:
             'chunk_index': self.chunk_index
         }
         
-        if self.page_number:
+        if self.page_number is not None:
             citation['page'] = self.page_number
-        if self.start_char or self.end_char:
+        if self.start_char is not None or self.end_char is not None:
             citation['char_range'] = f"{self.start_char}-{self.end_char}"
         
         if self.metadata:

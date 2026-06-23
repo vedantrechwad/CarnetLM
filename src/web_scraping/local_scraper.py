@@ -126,7 +126,10 @@ class WebScraper:
                 ))
                 idx += 1
 
-            start = end if end >= start + chunk_size else max(end, start + chunk_size - chunk_overlap)
+            # Advance with overlap, always move forward by at least 1 char
+            start = max(end - chunk_overlap, start + 1)
+            if start >= len(content):
+                break
 
         return chunks
 

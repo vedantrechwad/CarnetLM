@@ -30,7 +30,7 @@ class LocalMemoryLayer:
 
     def __init__(self, db_path: str = "./data/memory.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -161,7 +161,7 @@ class LocalMemoryLayer:
             return cursor.rowcount > 0
 
     def _touch_notebook(self, notebook_id: int):
-        """Update the notebook's updated_at timestamp."""
+        """Update the notebook's updated_at timestamp. Must be called within self._lock."""
         self.conn.execute(
             "UPDATE notebooks SET updated_at = ? WHERE id = ?",
             (datetime.now().isoformat(), notebook_id),
@@ -189,8 +189,12 @@ class LocalMemoryLayer:
             self.conn.commit()
             self._touch_notebook(notebook_id)
 
-    def get_conversation_context(self, notebook_id: int = 1, max_turns: int = 5) -> str:
-        """Get recent conversation as formatted context string."""
+    def get_conversation_context(self, notebook_id: int = 1, max_turns: int = 5, max_chars: int = 4000) -> str:
+        """Get recent conversation as formatted context string.
+        
+        Ensures only complete Q&A pairs are included and total size
+        stays within max_chars to avoid blowing the LLM context window.
+        """
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT role, content FROM conversations WHERE notebook_id = ? ORDER BY id DESC LIMIT ?",
@@ -199,10 +203,24 @@ class LocalMemoryLayer:
         rows = list(reversed(cursor.fetchall()))
         if not rows:
             return ""
+        # Ensure we have complete pairs (user + assistant)
+        paired_rows = []
+        i = 0
+        while i < len(rows) - 1:
+            if rows[i]["role"] == "user" and rows[i + 1]["role"] == "assistant":
+                paired_rows.extend([rows[i], rows[i + 1]])
+                i += 2
+            else:
+                i += 1  # Skip orphaned messages
         parts = []
-        for row in rows:
+        total_chars = 0
+        for row in paired_rows:
             role = "User" if row["role"] == "user" else "Assistant"
-            parts.append(f"{role}: {row['content']}")
+            line = f"{role}: {row['content']}"
+            if total_chars + len(line) > max_chars and parts:
+                break
+            parts.append(line)
+            total_chars += len(line)
         return "\n".join(parts)
 
     def get_chat_history(self, notebook_id: int = 1) -> List[Dict[str, Any]]:
@@ -225,29 +243,31 @@ class LocalMemoryLayer:
 
     def clear_chat(self, notebook_id: int) -> None:
         """Clear chat history for a notebook."""
-        self.conn.execute("DELETE FROM conversations WHERE notebook_id = ?", (notebook_id,))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute("DELETE FROM conversations WHERE notebook_id = ?", (notebook_id,))
+            self.conn.commit()
 
     # ─── Sources ───────────────────────────────────────────────────────────
 
     def save_source(self, source_info: Dict[str, Any], notebook_id: int = 1) -> int:
         """Track an added source. Returns the source row ID."""
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO sources (notebook_id, name, source_type, size, chunk_count, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                notebook_id,
-                source_info.get("name", "Unknown"),
-                source_info.get("type", "unknown"),
-                source_info.get("size", ""),
-                source_info.get("chunks", 0),
-                json.dumps(source_info),
-                datetime.now().isoformat(),
-            ),
-        )
-        self.conn.commit()
-        self._touch_notebook(notebook_id)
-        return cursor.lastrowid
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT INTO sources (notebook_id, name, source_type, size, chunk_count, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    notebook_id,
+                    source_info.get("name", "Unknown"),
+                    source_info.get("type", "unknown"),
+                    source_info.get("size", ""),
+                    source_info.get("chunks", 0),
+                    json.dumps(source_info),
+                    datetime.now().isoformat(),
+                ),
+            )
+            self.conn.commit()
+            self._touch_notebook(notebook_id)
+            return cursor.lastrowid
 
     def get_sources(self, notebook_id: int = 1) -> List[Dict[str, Any]]:
         """Get all tracked sources for a notebook."""
@@ -272,7 +292,7 @@ class LocalMemoryLayer:
         """Get a source record by ID."""
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT id, notebook_id, name, source_type FROM sources WHERE id = ?",
+            "SELECT id, notebook_id, name, source_type, metadata_json FROM sources WHERE id = ?",
             (source_id,),
         )
         row = cursor.fetchone()
@@ -283,7 +303,36 @@ class LocalMemoryLayer:
             "notebook_id": row["notebook_id"],
             "name": row["name"],
             "type": row["source_type"],
+            "metadata": json.loads(row["metadata_json"] or "{}"),
         }
+
+    def get_source_metadata(self, source_id: int) -> Dict[str, Any]:
+        """Get the full metadata JSON for a source."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT metadata_json FROM sources WHERE id = ?", (source_id,))
+        row = cursor.fetchone()
+        if not row:
+            return {}
+        return json.loads(row["metadata_json"] or "{}")
+
+    def update_source(self, source_id: int, source_info: Dict[str, Any], notebook_id: Optional[int] = None) -> bool:
+        """Update an existing source in-place (for refresh). Preserves the source ID."""
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE sources SET name = ?, size = ?, chunk_count = ?, metadata_json = ? WHERE id = ?",
+                (
+                    source_info.get("name", "Unknown"),
+                    source_info.get("size", ""),
+                    source_info.get("chunks", 0),
+                    json.dumps(source_info),
+                    source_id,
+                ),
+            )
+            self.conn.commit()
+            if notebook_id is not None:
+                self._touch_notebook(notebook_id)
+            return cursor.rowcount > 0
 
     def delete_source(self, source_id: int) -> bool:
         with self._lock:
@@ -296,36 +345,38 @@ class LocalMemoryLayer:
 
     def create_note(self, notebook_id: int, title: str, content: str = "") -> int:
         """Create a new note. Returns its ID."""
-        cursor = self.conn.cursor()
-        now = datetime.now().isoformat()
-        cursor.execute(
-            "INSERT INTO notes (notebook_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (notebook_id, title, content, now, now),
-        )
-        self.conn.commit()
-        self._touch_notebook(notebook_id)
-        return cursor.lastrowid
+        with self._lock:
+            cursor = self.conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute(
+                "INSERT INTO notes (notebook_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (notebook_id, title, content, now, now),
+            )
+            self.conn.commit()
+            self._touch_notebook(notebook_id)
+            return cursor.lastrowid
 
     def update_note(self, note_id: int, title: Optional[str] = None, content: Optional[str] = None) -> bool:
         """Update a note's title and/or content."""
-        cursor = self.conn.cursor()
-        updates = []
-        params = []
-        if title is not None:
-            updates.append("title = ?")
-            params.append(title)
-        if content is not None:
-            updates.append("content = ?")
-            params.append(content)
-        if not updates:
-            return False
-        updates.append("updated_at = ?")
-        params.append(datetime.now().isoformat())
-        params.append(note_id)
+        with self._lock:
+            cursor = self.conn.cursor()
+            updates = []
+            params = []
+            if title is not None:
+                updates.append("title = ?")
+                params.append(title)
+            if content is not None:
+                updates.append("content = ?")
+                params.append(content)
+            if not updates:
+                return False
+            updates.append("updated_at = ?")
+            params.append(datetime.now().isoformat())
+            params.append(note_id)
 
-        cursor.execute(f"UPDATE notes SET {', '.join(updates)} WHERE id = ?", params)
-        self.conn.commit()
-        return cursor.rowcount > 0
+            cursor.execute(f"UPDATE notes SET {', '.join(updates)} WHERE id = ?", params)
+            self.conn.commit()
+            return cursor.rowcount > 0
 
     def append_to_note(self, note_id: int, text: str) -> bool:
         """Append text to an existing note."""
@@ -373,10 +424,11 @@ class LocalMemoryLayer:
         }
 
     def delete_note(self, note_id: int) -> bool:
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
-        self.conn.commit()
-        return cursor.rowcount > 0
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+            self.conn.commit()
+            return cursor.rowcount > 0
 
     # ─── Cleanup ───────────────────────────────────────────────────────────
 
