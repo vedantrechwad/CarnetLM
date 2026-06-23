@@ -256,9 +256,9 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
-            background: rgba(5,5,5,0.85);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            background: rgba(5,5,5,0.80);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
             position: relative;
         }
 
