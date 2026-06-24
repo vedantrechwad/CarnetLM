@@ -2,7 +2,11 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
             --bg-elevated: #2a2a2e;
+HEAD
             --shadow-elevated: 0 1px 0 rgba(129, 129, 133, 0.05) inset, 0 12px 40px rgba(0,0,0,0.35);
+
+            --shadow-elevated: 0 1px 0 rgba(255,255,255,0.05) inset, 0 12px 40px rgba(0,0,0,0.35);
+vedant
             --black: #121214;
             --white: #f0eeea;
             --g05: #161618;
@@ -256,9 +260,15 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+HEAD
             background: rgba(5,5,5,0.72);
             backdrop-filter: blur(4px);
             -webkit-backdrop-filter: blur(4px);
+
+            background: rgba(5,5,5,0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+vedant
             position: relative;
         }
 
@@ -875,8 +885,13 @@
                 0deg,
                 transparent,
                 transparent 2px,
+HEAD
                 rgba(0,0,0,0.008) 2px,
                 rgba(0,0,0,0.008) 4px
+
+                rgba(0,0,0,0.015) 2px,
+                rgba(0,0,0,0.015) 4px
+vedant
             );
         }
 
@@ -932,4 +947,8 @@
         .ql-editor.ql-blank::before { color: var(--g30) !important; font-style: normal !important; }
         .sidebar-actions { padding: 0.25rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
         .sidebar-actions-row { display: flex; gap: 0.5rem; flex-wrap: wrap; width: 100%; }
+ HEAD
         .settings-btn-wrap { padding: 0.5rem 0.75rem; border-top: 1px solid var(--g15); }
+
+        .settings-btn-wrap { padding: 0.5rem 0.75rem; border-top: 1px solid var(--g15); }
+ vedant

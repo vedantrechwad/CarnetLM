@@ -17,4 +17,6 @@ function sourceIcon(type) {
         Document: 'file-text',
     };
     return map[type] || 'file-text';
+HEAD
 }
+} vedant

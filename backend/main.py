@@ -6,6 +6,7 @@ Multi-notebook document Q&A with notes, AI writing assist, and export.
 
 import os
 import re
+import json
 import time
 import logging
 import tempfile
@@ -14,9 +15,10 @@ from typing import List, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
+from fastapi.background import BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -35,12 +37,15 @@ _rag_generator = None
 _web_scraper = None
 _youtube_extractor = None
 _memory = None
+_ingest_jobs = None
+_orpheus_tts = None
 
 
 def _initialize():
     """Initialize all components."""
     global _llm_router, _doc_processor, _embedding_generator
     global _vector_db, _rag_generator, _web_scraper, _youtube_extractor, _memory
+    global _ingest_jobs, _orpheus_tts
 
     from src.llm.llm_router import LLMRouter
     from src.document_processing.doc_processor import DocumentProcessor
@@ -50,8 +55,13 @@ def _initialize():
     from src.web_scraping.local_scraper import WebScraper
     from src.youtube.transcript import YouTubeTranscriptExtractor
     from src.memory.local_memory import LocalMemoryLayer
+    from src.ingest.ingest_jobs import IngestJobManager
+    from src.ingest.pipeline import apply_chunking_to_processors
+    from src.tts.orpheus_client import OrpheusTTSClient
+    from backend.helpers import resolve_chunking
 
     Path("./data").mkdir(exist_ok=True)
+    Path("./data/sources").mkdir(exist_ok=True)
 
     _llm_router = LLMRouter(
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
@@ -59,27 +69,34 @@ def _initialize():
         ollama_model=os.getenv("OLLAMA_MODEL", "llama3"),
         auto_start=True,
     )
+    _memory = LocalMemoryLayer(db_path="./data/memory.db")
     _doc_processor = DocumentProcessor()
     _embedding_generator = EmbeddingGenerator()
     _vector_db = MilvusVectorDB(
         db_path="./data/docchat.db",
         collection_name="docchat",
+        embedding_dim=_embedding_generator.get_embedding_dimension(),
     )
+    _web_scraper = WebScraper()
+    _youtube_extractor = YouTubeTranscriptExtractor()
+    _ingest_jobs = IngestJobManager()
+    _orpheus_tts = OrpheusTTSClient()
+
+    chunking = resolve_chunking(_memory, _llm_router, notebook_id=1)
+    apply_chunking_to_processors(chunking, _doc_processor, _web_scraper, _youtube_extractor)
+
     _rag_generator = RAGGeneratorV2(
         llm_router=_llm_router,
         embedding_generator=_embedding_generator,
         vector_db=_vector_db,
     )
-    _web_scraper = WebScraper()
-    _youtube_extractor = YouTubeTranscriptExtractor()
-    _memory = LocalMemoryLayer(db_path="./data/memory.db")
 
     try:
         _vector_db.create_index(use_binary_quantization=False)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Index creation skipped or failed: {e}")
 
-    logger.info("DocChat initialized successfully")
+    logger.info("CarnetLM initialized successfully")
 
 
 def _shutdown():
@@ -89,6 +106,16 @@ def _shutdown():
         _vector_db.close()
     if _memory:
         _memory.close()
+    if _orpheus_tts:
+        _orpheus_tts.close()
+
+
+def _apply_notebook_chunking(notebook_id: int, preset_override: Optional[str] = None):
+    from backend.helpers import resolve_chunking
+    from src.ingest.pipeline import apply_chunking_to_processors
+    chunking = resolve_chunking(_memory, _llm_router, notebook_id, preset_override)
+    apply_chunking_to_processors(chunking, _doc_processor, _web_scraper, _youtube_extractor)
+    return chunking
 
 
 # ─── Pydantic Models ───────────────────────────────────────────────────────────
@@ -139,6 +166,73 @@ class ExportRequest(BaseModel):
     format: str  # pdf, docx, txt, md
     filename: str = "document"
 
+class SummaryRequest(BaseModel):
+    notebook_id: int = 1
+
+class CompareRequest(BaseModel):
+    source_names: List[str]
+    notebook_id: int = 1
+
+class BatchURLRequest(BaseModel):
+    urls: List[str]
+    notebook_id: int = 1
+
+class ClipboardRequest(BaseModel):
+    text: str
+    title: str = "Pasted Text"
+    notebook_id: int = 1
+
+class SearchRequest(BaseModel):
+    query: str
+    notebook_id: int = 1
+
+class ChatExportRequest(BaseModel):
+    notebook_id: int = 1
+    format: str = "md"  # md, txt
+
+class RefreshSourceRequest(BaseModel):
+    source_id: int
+    notebook_id: int = 1
+
+class ChunkingSettingsUpdate(BaseModel):
+    preset: str = "auto"
+    chunk_tokens: int = 384
+    overlap_tokens: int = 100
+    ingest_mode: str = "quality"
+    notebook_id: int = 1
+
+class DiscoverSettingsUpdate(BaseModel):
+    enabled: bool = False
+    auto_on_topic: bool = False
+    max_results: int = 8
+    provider: str = "duckduckgo"
+    api_key: str = ""
+    notebook_id: int = 1
+
+class DiscoverSearchRequest(BaseModel):
+    notebook_id: int = 1
+    query: Optional[str] = None
+
+class DiscoverIngestRequest(BaseModel):
+    notebook_id: int = 1
+    urls: List[str]
+
+class SourceContentUpdate(BaseModel):
+    content: str
+    page_text: Optional[dict] = None
+
+class DocumentSave(BaseModel):
+    html_content: str
+    title: str = "Untitled"
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+    speed: float = 1.0
+
+class NoteIndexRequest(BaseModel):
+    indexed: bool = True
+
 
 # ─── App ───────────────────────────────────────────────────────────────────────
 
@@ -149,9 +243,9 @@ async def lifespan(app: FastAPI):
     _shutdown()
 
 app = FastAPI(
-    title="DocChat",
+    title="CarnetLM",
     description="Multi-notebook document Q&A with AI writing assist.",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
@@ -167,9 +261,15 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
+    milvus_ok = bool(_vector_db and _vector_db.collection_exists)
+    memory_ok = bool(_memory)
+    tts_status = _orpheus_tts.health_check() if _orpheus_tts else {"available": False}
     return {
-        "status": "ok" if _llm_router else "not_initialized",
+        "status": "ok" if _llm_router and milvus_ok and memory_ok else "degraded",
         "llm": _llm_router.health_check() if _llm_router else {},
+        "milvus": {"available": milvus_ok},
+        "memory": {"available": memory_ok},
+        "tts": tts_status,
     }
 
 
@@ -177,23 +277,157 @@ async def health_check():
 
 @app.get("/api/models")
 async def list_models():
-    """List installed Ollama models."""
+    """List available models (Ollama + Gemini)."""
     if not _llm_router:
         raise HTTPException(status_code=503, detail="Not initialized")
+    models = _llm_router.list_models()
+    # Include Gemini as a model option
+    gemini_entry = None
+    if _llm_router.gemini_available:
+        gemini_entry = {
+            "name": "gemini-2.5-flash",
+            "size": "API",
+            "family": "Gemini",
+            "parameters": "",
+            "quantization": "",
+            "active": _llm_router.get_active_provider() == "gemini",
+            "is_api": True,
+        }
     return {
-        "models": _llm_router.list_models(),
+        "models": models,
+        "gemini": gemini_entry,
         "active": _llm_router.ollama_model,
+        "active_provider": _llm_router.get_active_provider(),
         "ollama_available": _llm_router.ollama_available,
+        "gemini_available": _llm_router.gemini_available,
+        "context_size": _llm_router.get_model_context_size(),
     }
 
 @app.post("/api/models/select")
 async def select_model(request: ModelSelect):
-    """Switch the active Ollama model."""
+    """Switch the active model."""
     if not _llm_router:
         raise HTTPException(status_code=503, detail="Not initialized")
     if _llm_router.set_model(request.model):
-        return {"status": "ok", "model": request.model}
+        return {
+            "status": "ok",
+            "model": request.model,
+            "active_provider": _llm_router.get_active_provider(),
+            "context_size": _llm_router.get_model_context_size(),
+        }
     raise HTTPException(status_code=404, detail=f"Model '{request.model}' not found")
+
+
+# ─── Chunking Settings ───────────────────────────────────────────────────────
+
+@app.get("/api/chunking/profiles")
+async def chunking_profiles(notebook_id: int = Query(1)):
+    from backend.helpers import get_chunking_profiles
+    if not _llm_router or not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    profiles = get_chunking_profiles(_llm_router)
+    profiles["current"] = _memory.get_chunking_settings(notebook_id)
+    return profiles
+
+
+@app.get("/api/settings/chunking")
+async def get_chunking_settings(notebook_id: int = Query(1)):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    return _memory.get_chunking_settings(notebook_id)
+
+
+@app.put("/api/settings/chunking")
+async def update_chunking_settings(request: ChunkingSettingsUpdate):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    settings = {
+        "preset": request.preset,
+        "chunk_tokens": request.chunk_tokens,
+        "overlap_tokens": request.overlap_tokens,
+        "ingest_mode": request.ingest_mode,
+    }
+    _memory.set_chunking_settings(settings, notebook_id=request.notebook_id)
+    _apply_notebook_chunking(request.notebook_id)
+    return {"status": "ok", "settings": settings}
+
+
+@app.get("/api/settings/discover")
+async def get_discover_settings(notebook_id: int = Query(1)):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    return _memory.get_discover_settings(notebook_id)
+
+
+@app.put("/api/settings/discover")
+async def update_discover_settings(request: DiscoverSettingsUpdate):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    settings = {
+        "enabled": request.enabled,
+        "auto_on_topic": request.auto_on_topic,
+        "max_results": request.max_results,
+        "provider": request.provider,
+        "api_key": request.api_key,
+    }
+    _memory.set_discover_settings(settings, notebook_id=request.notebook_id)
+    return {"status": "ok", "settings": settings}
+
+
+@app.post("/api/discover/search")
+async def discover_search(request: DiscoverSearchRequest):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    from src.discovery.web_discovery import infer_topic, search_candidates
+
+    settings = _memory.get_discover_settings(request.notebook_id)
+    if not settings.get("enabled"):
+        raise HTTPException(status_code=403, detail="Web discovery is disabled in Settings")
+
+    notebooks = _memory.list_notebooks()
+    nb_name = next((n["name"] for n in notebooks if n["id"] == request.notebook_id), "Notebook")
+    source_titles = [s.get("name", "") for s in _memory.get_sources(request.notebook_id)]
+    query = (request.query or "").strip() or infer_topic(nb_name, source_titles)
+
+    candidates = search_candidates(
+        query=query,
+        provider=settings.get("provider", "duckduckgo"),
+        max_results=int(settings.get("max_results", 8)),
+        api_key=settings.get("api_key") or None,
+    )
+    return {"query": query, "candidates": candidates}
+
+
+@app.post("/api/discover/ingest")
+async def discover_ingest(request: DiscoverIngestRequest):
+    """Ingest user-selected URLs from discovery."""
+    if not _web_scraper or not _ingest_jobs:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    if not request.urls:
+        raise HTTPException(status_code=400, detail="No URLs selected")
+
+    url_request = URLRequest(urls=request.urls, notebook_id=request.notebook_id)
+    return await add_urls(url_request)
+
+
+# ─── Ingest Jobs ─────────────────────────────────────────────────────────────
+
+@app.get("/api/ingest/jobs")
+async def list_ingest_jobs(notebook_id: Optional[int] = Query(None)):
+    if not _ingest_jobs:
+        return {"jobs": []}
+    return {"jobs": _ingest_jobs.list_jobs(notebook_id=notebook_id)}
+
+
+@app.get("/api/ingest/jobs/{job_id}")
+async def get_ingest_job(job_id: str):
+    if not _ingest_jobs:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    job = _ingest_jobs.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.to_dict()
 
 
 # ─── Notebooks ─────────────────────────────────────────────────────────────────
@@ -224,6 +458,9 @@ async def delete_notebook(notebook_id: int):
     if not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
     if _memory.delete_notebook(notebook_id):
+        # Also delete vectors for this notebook from Milvus
+        if _vector_db:
+            _vector_db.delete_by_notebook(notebook_id)
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Notebook not found")
 
@@ -234,93 +471,205 @@ async def delete_notebook(notebook_id: int):
 async def upload_files(
     files: List[UploadFile] = File(...),
     notebook_id: int = Form(1),
+    chunk_preset: str = Form("auto"),
 ):
-    """Upload and process document files."""
-    if not _doc_processor:
+    """Upload and process document files (background ingest)."""
+    if not _doc_processor or not _ingest_jobs:
         raise HTTPException(status_code=503, detail="Not initialized")
 
-    results = []
+    from src.ingest.ingest_jobs import JobStatus
+    from src.ingest.pipeline import (
+        check_existing_checksum,
+        file_checksum,
+        ingest_chunks,
+        make_progress_callback,
+        store_source_file,
+    )
+
+    _apply_notebook_chunking(notebook_id, chunk_preset if chunk_preset != "auto" else None)
+    job_ids = []
+
     for uploaded_file in files:
-        try:
-            suffix = Path(uploaded_file.filename or "").suffix
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                content = await uploaded_file.read()
-                tmp.write(content)
-                temp_path = tmp.name
+        content = await uploaded_file.read()
+        filename = uploaded_file.filename or "upload"
+        suffix = Path(filename).suffix
+        job = _ingest_jobs.create_job(notebook_id, filename)
+        job_ids.append(job.id)
+        jid = job.id
+        nb_id = notebook_id
 
-            chunks = _doc_processor.process_document(temp_path)
-            for chunk in chunks:
-                chunk.source_file = uploaded_file.filename
+        def process_upload(file_content: bytes, fname: str, ext: str, job_id: str, notebook: int):
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    tmp.write(file_content)
+                    temp_path = tmp.name
 
-            if chunks:
-                embedded = _embedding_generator.generate_embeddings(chunks)
-                _vector_db.insert_embeddings(embedded)
-                _memory.save_source({
-                    "name": uploaded_file.filename,
-                    "type": "Document",
-                    "size": f"{len(content) / 1024:.1f} KB",
-                    "chunks": len(chunks),
-                }, notebook_id=notebook_id)
-                results.append({"file": uploaded_file.filename, "chunks": len(chunks), "status": "ok"})
+                checksum = file_checksum(Path(temp_path))
+                existing = check_existing_checksum(_memory, checksum, notebook, fname)
+                if existing:
+                    _ingest_jobs._update(
+                        job_id, status=JobStatus.COMPLETED, progress=100,
+                        message="Already indexed (unchanged file)",
+                        chunks_total=existing.get("chunks", 0),
+                        chunks_done=existing.get("chunks", 0),
+                    )
+                    return {
+                        "file": fname, "status": "skipped", "message": "Already indexed",
+                        "source_id": existing["id"], "chunks": existing.get("chunks", 0),
+                    }
 
-            os.unlink(temp_path)
-        except Exception as e:
-            logger.error(f"Upload error for {uploaded_file.filename}: {e}")
-            results.append({"file": uploaded_file.filename, "error": str(e)})
+                _ingest_jobs._update(job_id, status=JobStatus.EXTRACTING, message="Extracting...", progress=10)
+                result = _doc_processor.process_document(temp_path)
+                chunks = result.chunks
+                page_text = result.page_text
+                for chunk in chunks:
+                    chunk.source_file = fname
 
-    return {"results": results}
+                if not chunks:
+                    return {"file": fname, "error": "No content extracted"}
+
+                _ingest_jobs._update(
+                    job_id, status=JobStatus.EMBEDDING,
+                    message=f"Embedding 0/{len(chunks)} chunks...",
+                    progress=25, chunks_total=len(chunks), chunks_done=0,
+                )
+
+                on_progress = make_progress_callback(_ingest_jobs, job_id)
+                source_id = ingest_chunks(
+                    chunks=chunks,
+                    notebook_id=notebook,
+                    source_name=fname,
+                    embedding_generator=_embedding_generator,
+                    vector_db=_vector_db,
+                    memory=_memory,
+                    source_info={
+                        "name": fname,
+                        "type": "Document",
+                        "size": f"{len(file_content) / 1024:.1f} KB",
+                        "chunks": len(chunks),
+                        "checksum": checksum,
+                        "index_status": "ready",
+                    },
+                    replace_existing=True,
+                    on_progress=on_progress,
+                )
+
+                stored = store_source_file(notebook, source_id, Path(temp_path), fname)
+                _memory.save_source_file(
+                    source_id, notebook, str(stored),
+                    mime_type=ext, checksum=checksum, page_text=page_text,
+                )
+
+                return {"file": fname, "chunks": len(chunks), "status": "ok", "source_id": source_id}
+            finally:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+
+        _ingest_jobs.enqueue(
+            jid,
+            lambda fc=content, fn=filename, ex=suffix, j=jid, n=nb_id: process_upload(fc, fn, ex, j, n),
+        )
+
+    return {"job_ids": job_ids, "status": "processing"}
 
 
 @app.post("/api/url")
 async def add_urls(request: URLRequest):
-    """Scrape web URLs and add as sources."""
-    if not _web_scraper:
+    """Scrape web URLs and add as sources (background ingest)."""
+    if not _web_scraper or not _ingest_jobs:
         raise HTTPException(status_code=503, detail="Not initialized")
 
-    results = []
-    for url in request.urls:
-        try:
-            chunks = _web_scraper.scrape_url(url)
-            if chunks:
-                embedded = _embedding_generator.generate_embeddings(chunks)
-                _vector_db.insert_embeddings(embedded)
-                source_name = chunks[0].source_file
-                _memory.save_source({
-                    "name": source_name, "type": "Website",
-                    "size": f"{len(chunks)} chunks", "chunks": len(chunks),
-                }, notebook_id=request.notebook_id)
-                results.append({"url": url, "title": source_name, "chunks": len(chunks), "status": "ok"})
-            else:
-                results.append({"url": url, "error": "No content extracted"})
-        except Exception as e:
-            logger.error(f"URL scrape error for {url}: {e}")
-            results.append({"url": url, "error": str(e)})
+    from src.ingest.ingest_jobs import JobStatus
+    from src.ingest.pipeline import ingest_chunks, make_progress_callback
 
-    return {"results": results}
+    _apply_notebook_chunking(request.notebook_id)
+    job_ids = []
+
+    for url in request.urls:
+        job = _ingest_jobs.create_job(request.notebook_id, url)
+        job_ids.append(job.id)
+        jid = job.id
+        nb_id = request.notebook_id
+
+        def process_url(target_url: str, job_id: str, notebook: int):
+            _ingest_jobs._update(job_id, status=JobStatus.EXTRACTING, message="Scraping...", progress=20)
+            chunks = _web_scraper.scrape_url(target_url)
+            if not chunks:
+                return {"url": target_url, "error": "No content extracted"}
+            source_name = chunks[0].source_file
+            _ingest_jobs._update(
+                job_id, status=JobStatus.EMBEDDING,
+                message=f"Embedding 0/{len(chunks)} chunks...", progress=25,
+                chunks_total=len(chunks), chunks_done=0,
+            )
+            on_progress = make_progress_callback(_ingest_jobs, job_id)
+            ingest_chunks(
+                chunks=chunks, notebook_id=notebook, source_name=source_name,
+                embedding_generator=_embedding_generator, vector_db=_vector_db, memory=_memory,
+                source_info={
+                    "name": source_name, "type": "Website",
+                    "size": f"{len(chunks)} chunks", "chunks": len(chunks), "url": target_url,
+                    "index_status": "ready",
+                },
+                replace_existing=True,
+                on_progress=on_progress,
+            )
+            return {"url": target_url, "title": source_name, "chunks": len(chunks), "status": "ok"}
+
+        _ingest_jobs.run_in_background(
+            jid, lambda u=url, j=jid, n=nb_id: process_url(u, j, n),
+        )
+
+    return {"job_ids": job_ids, "status": "processing"}
 
 
 @app.post("/api/youtube")
 async def add_youtube(request: YouTubeRequest):
-    """Extract YouTube transcript and add as source."""
-    if not _youtube_extractor:
+    """Extract YouTube transcript and add as source (background ingest)."""
+    if not _youtube_extractor or not _ingest_jobs:
         raise HTTPException(status_code=503, detail="Not initialized")
-    try:
-        chunks = _youtube_extractor.extract_transcript(request.url)
-        if chunks:
-            embedded = _embedding_generator.generate_embeddings(chunks)
-            _vector_db.insert_embeddings(embedded)
-            source_name = chunks[0].source_file
-            _memory.save_source({
+
+    from src.ingest.ingest_jobs import JobStatus
+    from src.ingest.pipeline import ingest_chunks, make_progress_callback
+
+    _apply_notebook_chunking(request.notebook_id)
+    job = _ingest_jobs.create_job(request.notebook_id, request.url)
+    jid = job.id
+    nb_id = request.notebook_id
+
+    def process_yt(target_url: str, job_id: str, notebook: int):
+        _ingest_jobs._update(job_id, status=JobStatus.EXTRACTING, message="Extracting transcript...", progress=20)
+        chunks = _youtube_extractor.extract_transcript(target_url)
+        if not chunks:
+            raise ValueError("No transcript found")
+        source_name = chunks[0].source_file
+        _ingest_jobs._update(
+            job_id, status=JobStatus.EMBEDDING,
+            message=f"Embedding 0/{len(chunks)} chunks...", progress=25,
+            chunks_total=len(chunks), chunks_done=0,
+        )
+        on_progress = make_progress_callback(_ingest_jobs, job_id)
+        ingest_chunks(
+            chunks=chunks, notebook_id=notebook, source_name=source_name,
+            embedding_generator=_embedding_generator, vector_db=_vector_db, memory=_memory,
+            source_info={
                 "name": source_name, "type": "YouTube",
-                "size": f"{len(chunks)} chunks", "chunks": len(chunks),
-            }, notebook_id=request.notebook_id)
-            return {"title": source_name, "chunks": len(chunks), "status": "ok"}
-        raise HTTPException(status_code=400, detail="No transcript found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"YouTube error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+                "size": f"{len(chunks)} chunks", "chunks": len(chunks), "url": target_url,
+                "index_status": "ready",
+            },
+            replace_existing=True,
+            on_progress=on_progress,
+        )
+        return {"title": source_name, "chunks": len(chunks), "status": "ok"}
+
+    _ingest_jobs.run_in_background(
+        jid, lambda u=request.url, j=jid, n=nb_id: process_yt(u, j, n),
+    )
+    return {"job_ids": [jid], "status": "processing"}
 
 
 @app.get("/api/sources")
@@ -334,7 +683,15 @@ async def get_sources(notebook_id: int = Query(1)):
 async def delete_source(source_id: int):
     if not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
-    if _memory.delete_source(source_id):
+    # Get source info before deleting (needed to clean vectors)
+    source_info = _memory.get_source_by_id(source_id)
+    if source_info and _memory.delete_source(source_id):
+        # Also delete vectors from Milvus
+        if _vector_db and source_info:
+            _vector_db.delete_by_source(
+                source_file=source_info["name"],
+                notebook_id=source_info["notebook_id"],
+            )
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Source not found")
 
@@ -353,6 +710,7 @@ async def chat(request: ChatRequest):
 
     result = _rag_generator.generate_response(
         query=request.query,
+        notebook_id=request.notebook_id,
         conversation_context=conv_context,
     )
 
@@ -362,6 +720,55 @@ async def chat(request: ChatRequest):
         response=result.response,
         sources_used=result.sources_used,
         retrieval_count=result.retrieval_count,
+    )
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """Stream RAG response via Server-Sent Events."""
+    if not _rag_generator or not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    conv_context = _memory.get_conversation_context(
+        notebook_id=request.notebook_id, max_turns=5,
+    )
+
+    def event_generator():
+        full_text = []
+        sources_used = []
+        retrieval_count = 0
+        try:
+            for event_type, data in _rag_generator.generate_response_stream(
+                query=request.query,
+                notebook_id=request.notebook_id,
+                conversation_context=conv_context,
+            ):
+                if event_type == "token":
+                    full_text.append(data.get("text", ""))
+                elif event_type == "meta":
+                    sources_used = data.get("sources_used", [])
+                    retrieval_count = data.get("retrieval_count", 0)
+                elif event_type == "done":
+                    sources_used = data.get("sources_used", sources_used)
+                    retrieval_count = data.get("retrieval_count", retrieval_count)
+                yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+            if full_text:
+                from src.generation.rag_v2 import RAGResult
+                result = RAGResult(
+                    query=request.query,
+                    response="".join(full_text),
+                    sources_used=sources_used,
+                    retrieval_count=retrieval_count,
+                )
+                _memory.save_conversation_turn(result, notebook_id=request.notebook_id)
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -378,6 +785,388 @@ async def clear_history(notebook_id: int = Query(1)):
         raise HTTPException(status_code=503, detail="Not initialized")
     _memory.clear_chat(notebook_id)
     return {"status": "ok"}
+
+
+# NOTE: /api/chat/stream removed — was fake streaming (generated full response
+# synchronously then split into 3-word chunks). The frontend now uses /api/chat.
+# True streaming would require the LLM router to yield tokens.
+
+
+# ─── Auto-Summary ──────────────────────────────────────────────────────────────
+
+@app.post("/api/summary")
+async def generate_summary(request: SummaryRequest):
+    """Auto-generate a summary / study guide from all sources."""
+    if not _llm_router or not _vector_db or not _embedding_generator:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    # Get all sources for this notebook
+    sources = _memory.get_sources(request.notebook_id)
+    if not sources:
+        raise HTTPException(status_code=400, detail="No sources available to summarize")
+
+    # Retrieve a broad set of chunks across all sources
+    query_vector = _embedding_generator.generate_query_embedding(
+        "main topics themes key points summary overview"
+    )
+    search_results = _vector_db.search(
+        query_vector=query_vector.tolist(),
+        limit=20,
+        notebook_id=request.notebook_id,
+    )
+
+    if not search_results:
+        raise HTTPException(status_code=400, detail="No content found in sources")
+
+    # Build context from retrieved chunks
+    context = "\n\n".join([r["content"] for r in search_results[:15]])
+    source_names = list(set(r["citation"]["source_file"] for r in search_results))
+
+    try:
+        result = _llm_router.generate(
+            prompt=f"""Based on the following source material, create a comprehensive study guide with:
+1. **Executive Summary** (2-3 paragraphs)
+2. **Key Topics** (bullet points with brief explanations)
+3. **Important Details** (notable facts, figures, or concepts)
+4. **Connections** (how different topics relate to each other)
+
+Source Material:
+{context}
+
+Sources used: {', '.join(source_names)}""",
+            system_prompt="You are an expert study guide creator. Create clear, organized, and comprehensive summaries.",
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        return {
+            "summary": result.content,
+            "sources_used": source_names,
+            "provider": result.provider,
+            "model": result.model,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Source Content Viewer ─────────────────────────────────────────────────────
+
+@app.get("/api/sources/{source_id}/content")
+async def get_source_content(source_id: int, notebook_id: int = Query(1)):
+    """Get the full content of a source (all its chunks)."""
+    from backend.helpers import sort_chunks
+
+    if not _vector_db or not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    source_info = _memory.get_source_by_id(source_id)
+    if not source_info:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    nb_id = source_info["notebook_id"]
+    results = _vector_db.query_by_source(
+        source_file=source_info["name"],
+        notebook_id=nb_id,
+    )
+    results = sort_chunks(results)
+
+    sf = _memory.get_source_file(source_id)
+    editable = source_info.get("type") in ("Document", "Clipboard") or bool(sf)
+
+    return {
+        "source": source_info,
+        "chunks": [
+            {
+                "content": r["content"],
+                "page_number": r["citation"].get("page_number"),
+                "chunk_index": r["citation"].get("chunk_index", 0),
+            }
+            for r in results
+        ],
+        "total_chunks": len(results),
+        "editable": editable,
+        "page_text": sf.get("page_text", {}) if sf else {},
+        "file_path": sf.get("file_path") if sf else None,
+    }
+
+
+@app.put("/api/sources/{source_id}/content")
+async def update_source_content(source_id: int, request: SourceContentUpdate):
+    """Save edited source content and re-index."""
+    from backend.helpers import reindex_source_content
+
+    if not _doc_processor or not _embedding_generator or not _vector_db or not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    source_info = _memory.get_source_by_id(source_id)
+    if not source_info:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    sf = _memory.get_source_file(source_id)
+    notebook_id = source_info["notebook_id"]
+    _apply_notebook_chunking(notebook_id)
+
+    if sf and sf.get("file_path"):
+        path = Path(sf["file_path"])
+        if request.page_text:
+            _memory.save_source_file(
+                source_id, notebook_id, sf["file_path"],
+                mime_type=sf.get("mime_type", ""),
+                checksum=sf.get("checksum", ""),
+                page_text=request.page_text,
+            )
+        elif path.suffix.lower() in (".txt", ".md"):
+            path.write_text(request.content, encoding="utf-8")
+
+    chunk_count = reindex_source_content(
+        source_id=source_id,
+        content=request.content,
+        page_text=request.page_text,
+        doc_processor=_doc_processor,
+        embedding_generator=_embedding_generator,
+        vector_db=_vector_db,
+        memory=_memory,
+        source_info=source_info,
+    )
+
+    return {"status": "ok", "chunks": chunk_count, "message": "Source re-indexed"}
+
+
+# ─── Full-Text Search ──────────────────────────────────────────────────────────
+
+@app.post("/api/search")
+async def full_text_search(request: SearchRequest):
+    """Search across all source content using vector similarity."""
+    if not _vector_db or not _embedding_generator:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    query_vector = _embedding_generator.generate_query_embedding(request.query)
+    results = _vector_db.search(
+        query_vector=query_vector.tolist(),
+        limit=20,
+        notebook_id=request.notebook_id,
+    )
+
+    return {
+        "results": [
+            {
+                "content": r["content"][:500],
+                "source_file": r["citation"]["source_file"],
+                "source_type": r["citation"]["source_type"],
+                "page_number": r["citation"].get("page_number"),
+                "score": r["score"],
+                "chunk_id": r["id"],
+            }
+            for r in results
+        ],
+        "total": len(results),
+    }
+
+
+# ─── Chat Export ───────────────────────────────────────────────────────────────
+
+@app.post("/api/chat/export")
+async def export_chat(request: ChatExportRequest):
+    """Export chat history as Markdown or plain text."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    history = _memory.get_chat_history(request.notebook_id)
+    if not history:
+        raise HTTPException(status_code=400, detail="No chat history to export")
+
+    if request.format == "md":
+        lines = ["# DocChat — Chat Export\n"]
+        for msg in history:
+            role = "**You**" if msg["role"] == "user" else "**DocChat**"
+            lines.append(f"### {role}\n")
+            lines.append(msg["content"] + "\n")
+            if msg.get("sources") and msg["role"] == "assistant":
+                src_names = list(set(s.get("source_file", "") for s in msg["sources"] if s.get("source_file")))
+                if src_names:
+                    lines.append(f"*Sources: {', '.join(src_names)}*\n")
+            lines.append("---\n")
+        content = "\n".join(lines)
+        media_type = "text/markdown"
+        ext = "md"
+    else:
+        lines = []
+        for msg in history:
+            role = "You" if msg["role"] == "user" else "DocChat"
+            lines.append(f"{role}:")
+            lines.append(msg["content"])
+            lines.append("")
+        content = "\n".join(lines)
+        media_type = "text/plain"
+        ext = "txt"
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="chat_export.{ext}"'},
+    )
+
+
+# ─── Compare Sources ──────────────────────────────────────────────────────────
+
+@app.post("/api/compare")
+async def compare_sources(request: CompareRequest):
+    """Compare 2+ sources using AI analysis."""
+    if not _llm_router or not _vector_db or not _embedding_generator:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    if len(request.source_names) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 sources to compare")
+
+    # Get chunks from each source using exact query (not semantic search)
+    source_contents = {}
+    for name in request.source_names:
+        results = _vector_db.query_by_source(
+            source_file=name,
+            notebook_id=request.notebook_id,
+            limit=10,
+        )
+        # Sort by chunk_index to get representative content in order
+        results.sort(key=lambda x: (
+            x.get("citation", {}).get("page_number") or 0,
+            x.get("citation", {}).get("chunk_index", 0),
+        ))
+        source_contents[name] = "\n".join([r["content"][:500] for r in results[:5]])
+
+    # Build comparison prompt
+    sources_text = ""
+    for name, content in source_contents.items():
+        sources_text += f"\n--- Source: {name} ---\n{content}\n"
+
+    try:
+        result = _llm_router.generate(
+            prompt=f"""Compare and contrast the following sources. Create a structured comparison with:
+1. **Common Themes** — What topics/ideas appear in all sources
+2. **Key Differences** — Where sources diverge or provide unique information
+3. **Comparison Table** — A markdown table comparing key aspects
+4. **Synthesis** — What you learn by combining all sources together
+
+{sources_text}""",
+            system_prompt="You are an expert analyst. Create clear, structured comparisons. Use markdown formatting.",
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        return {
+            "comparison": result.content,
+            "sources_compared": request.source_names,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Clipboard Paste as Source ────────────────────────────────────────────────
+
+@app.post("/api/clipboard")
+async def add_clipboard_source(request: ClipboardRequest):
+    """Add pasted text directly as a source (background ingest)."""
+    if not _doc_processor or not _ingest_jobs:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    from src.ingest.ingest_jobs import JobStatus
+    from src.ingest.pipeline import ingest_chunks, make_progress_callback
+
+    _apply_notebook_chunking(request.notebook_id)
+    job = _ingest_jobs.create_job(request.notebook_id, request.title)
+    jid = job.id
+    nb_id = request.notebook_id
+    text = request.text
+    title = request.title
+
+    def process_clipboard():
+        _ingest_jobs._update(jid, status=JobStatus.EXTRACTING, message="Processing...", progress=20)
+        chunks = _doc_processor.process_text_content(text=text, source_file=title, source_type="clipboard")
+        if not chunks:
+            return {"error": "No content to process"}
+        _ingest_jobs._update(
+            jid, status=JobStatus.EMBEDDING,
+            message=f"Embedding 0/{len(chunks)} chunks...", progress=25,
+            chunks_total=len(chunks), chunks_done=0,
+        )
+        on_progress = make_progress_callback(_ingest_jobs, jid)
+        ingest_chunks(
+            chunks=chunks, notebook_id=nb_id, source_name=title,
+            embedding_generator=_embedding_generator, vector_db=_vector_db, memory=_memory,
+            source_info={
+                "name": title, "type": "Clipboard",
+                "size": f"{len(text)} chars", "chunks": len(chunks),
+                "index_status": "ready",
+            },
+            replace_existing=True,
+            on_progress=on_progress,
+        )
+        return {"title": title, "chunks": len(chunks), "status": "ok"}
+
+    _ingest_jobs.run_in_background(jid, process_clipboard)
+    return {"job_ids": [jid], "status": "processing"}
+
+
+# ─── Source Refresh ───────────────────────────────────────────────────────────
+
+@app.post("/api/sources/refresh")
+async def refresh_source(request: RefreshSourceRequest):
+    """Re-scrape a web URL or re-extract a YouTube transcript."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    source_info = _memory.get_source_by_id(request.source_id)
+    if not source_info:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    source_type = source_info.get("type", "")
+
+    # Can only refresh web and YouTube sources
+    if source_type not in ("Website", "YouTube"):
+        raise HTTPException(status_code=400, detail="Can only refresh Website and YouTube sources")
+
+    # Get the URL from source metadata (using proper API, not raw cursor)
+    metadata = source_info.get("metadata", {})
+    source_name = source_info["name"]
+    nb_id = source_info["notebook_id"]
+
+    if _vector_db:
+        _vector_db.delete_by_source(source_name, notebook_id=nb_id)
+
+    try:
+        _apply_notebook_chunking(nb_id)
+        if source_type == "Website":
+            # Re-scrape
+            url = metadata.get("url") or metadata.get("name", "")
+            if not url.startswith("http"):
+                raise HTTPException(status_code=400, detail="Cannot determine URL for this source")
+            chunks = _web_scraper.scrape_url(url)
+        elif source_type == "YouTube":
+            url = metadata.get("url") or metadata.get("video_url", "")
+            if not url:
+                raise HTTPException(status_code=400, detail="Cannot determine URL for this source")
+            chunks = _youtube_extractor.extract_transcript(url)
+        else:
+            chunks = []
+
+        if chunks:
+            new_source_name = chunks[0].source_file
+            embedded = _embedding_generator.generate_embeddings(chunks)
+            _vector_db.insert_embeddings(embedded, notebook_id=nb_id)
+            _memory.update_source(request.source_id, {
+                "name": new_source_name,
+                "type": source_type,
+                "size": f"{len(chunks)} chunks",
+                "chunks": len(chunks),
+                "url": url,
+            }, notebook_id=nb_id)
+            return {"title": new_source_name, "chunks": len(chunks), "status": "refreshed"}
+
+        raise HTTPException(status_code=400, detail="No content extracted on refresh")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Notes ─────────────────────────────────────────────────────────────────────
@@ -429,9 +1218,75 @@ async def append_to_note(note_id: int, request: NoteAppend):
 async def delete_note(note_id: int):
     if not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
+    note = _memory.get_note(note_id)
+    if note and _vector_db:
+        _vector_db.delete_by_source(f"note:{note['title']} (#{note_id})", notebook_id=note["notebook_id"])
     if _memory.delete_note(note_id):
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Note not found")
+
+
+@app.post("/api/notes/{note_id}/index")
+async def index_note(note_id: int, request: NoteIndexRequest):
+    """Index or remove a note from RAG retrieval."""
+    from backend.helpers import index_note_as_source
+
+    if not _memory or not _embedding_generator or not _vector_db:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    note = _memory.get_note(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    _memory.set_note_indexed(note_id, request.indexed)
+    source_name = f"note:{note['title']} (#{note_id})"
+
+    if request.indexed and note.get("content", "").strip():
+        index_note_as_source(note, note["notebook_id"], _embedding_generator, _vector_db)
+    elif _vector_db:
+        _vector_db.delete_by_source(source_name, notebook_id=note["notebook_id"])
+
+    return {"status": "ok", "indexed": request.indexed}
+
+
+# ─── Documents (Quill persistence) ───────────────────────────────────────────
+
+@app.get("/api/notebooks/{notebook_id}/document")
+async def get_notebook_document(notebook_id: int):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    doc = _memory.get_document(notebook_id)
+    return doc or {"notebook_id": notebook_id, "title": "Untitled", "html_content": ""}
+
+
+@app.put("/api/notebooks/{notebook_id}/document")
+async def save_notebook_document(notebook_id: int, request: DocumentSave):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    doc_id = _memory.save_document(notebook_id, request.html_content, request.title)
+    return {"status": "ok", "id": doc_id}
+
+
+# ─── TTS ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/tts/health")
+async def tts_health():
+    if not _orpheus_tts:
+        return {"available": False}
+    status = _orpheus_tts.health_check()
+    status["voices"] = _orpheus_tts.list_voices() if status.get("available") else []
+    return status
+
+
+@app.post("/api/tts")
+async def synthesize_speech(request: TTSRequest):
+    if not _orpheus_tts:
+        raise HTTPException(status_code=503, detail="TTS not initialized")
+    try:
+        audio = _orpheus_tts.synthesize(request.text, voice=request.voice, speed=request.speed)
+        return Response(content=audio, media_type="audio/wav")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"TTS unavailable: {e}")
 
 
 # ─── AI Writing Assist ────────────────────────────────────────────────────────
@@ -523,10 +1378,21 @@ async def export_document(request: ExportRequest):
                 doc.save(tmp.name)
                 tmp_path = tmp.name
 
+            def _cleanup_temp():
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+            # Use BackgroundTasks to clean up temp file after response is sent
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(_cleanup_temp)
+
             return FileResponse(
                 tmp_path,
                 media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 filename=f"{request.filename}.docx",
+                background=background_tasks,
             )
         except ImportError:
             raise HTTPException(status_code=500, detail="DOCX export requires python-docx and htmldocx. Run: uv pip install python-docx htmldocx")
@@ -550,7 +1416,7 @@ async def serve_frontend():
     index_path = static_dir / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path))
-    return {"message": "DocChat API is running. Frontend not found at /static/index.html"}
+    return {"message": "CarnetLM API is running. Frontend not found at /static/index.html"}
 
 
 if __name__ == "__main__":

@@ -33,5 +33,10 @@ frontend/
 .mypy_cache/
 .ruff_cache/
 .python-version
+<<<<<<< HEAD
 __pycache__/
 *.pyc
+=======
+.cursor
+
+>>>>>>> vedant

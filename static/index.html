@@ -418,8 +418,13 @@
             // Cursor distortion
             vec2 toMouse = uv - u_mouse;
             float dist = length(toMouse);
+HEAD
             float strength = 0.06 * smoothstep(0.3, 0.0, dist);
             vec2 distorted = uv + normalize(toMouse + 0.001) * strength * (1.0 - dist * 3.5);
+
+            float strength = 0.04 * smoothstep(0.25, 0.0, dist);
+            vec2 distorted = uv + normalize(toMouse + 0.001) * strength * (1.0 - dist * 4.0);
+vedant
 
             float t = u_time;
             float geo = fractalTess(distorted * 2.0 - 1.0, t);
@@ -428,6 +433,7 @@
             float n1 = noise(distorted * 12.0 + t * 0.1);
             float n2 = noise(distorted * 5.0 - t * 0.05);
 
+HEAD
             // Build monochrome value — heavier geo weight for crisp lines
             float v = geo * 0.85 + n1 * 0.10 + n2 * 0.05;
 
@@ -441,6 +447,19 @@
             vec3 lineColor = vec3(0.38, 0.38, 0.42);      // ~#616168 visible grey for geometry lines
             float brightness = v * 0.45;                   // was 0.08 — now lines are actually visible
             gl_FragColor = vec4(base + lineColor * brightness, 1.0);
+
+            // Build monochrome value
+            float v = geo * 0.7 + n1 * 0.12 + n2 * 0.06;
+
+            // Edge vignette
+            float vignette = 1.0 - smoothstep(0.3, 1.2, length((uv - 0.5) * vec2(1.4, 1.8)));
+            v *= vignette;
+
+            // Keep it very dark — just enough texture to feel alive
+            float brightness = v * 0.08;
+            vec3 matte = vec3(0.102, 0.102, 0.114);
+            gl_FragColor = vec4(matte + vec3(brightness), 1.0);
+vedant
         }
     `;
 
