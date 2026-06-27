@@ -37,7 +37,7 @@
             <div class="sidebar-section-title">Sources <span id="sourceCount" style="font-weight:400;color:var(--g30)">0</span></div>
         </div>
         <div style="padding:0 0.75rem; overflow-y:auto; max-height:160px;" id="sourceList"></div>
-        <div class="sidebar-actions">
+        <div class="sidebar-actions" id="sidebarActions" style="display:none;">
             <div class="sidebar-actions-row">
                 <button class="sidebar-add" onclick="openModal('upload')"><i data-lucide="file-up" class="icon" style="width:14px;height:14px"></i> File</button>
                 <button class="sidebar-add" onclick="openModal('url')"><i data-lucide="link" class="icon" style="width:14px;height:14px"></i> URL</button>
@@ -534,13 +534,19 @@ async function loadNotebooks() {
 }
 function renderNotebooks() {
     const el = document.getElementById('notebookList');
-    if (!notebooks.length) { el.innerHTML = '<div style="padding:0.5rem;font-size:0.5rem;color:var(--g25, #404040);text-align:center;font-family:var(--font-mono);letter-spacing:0.08em">NO NOTEBOOKS</div>'; return; }
+    const actions = document.getElementById('sidebarActions');
+    if (!notebooks.length) { 
+        el.innerHTML = '<div style="padding:0.5rem;font-size:0.5rem;color:var(--g25, #404040);text-align:center;font-family:var(--font-mono);letter-spacing:0.08em">NO NOTEBOOKS</div>'; 
+        actions.style.display = 'none';
+        return; 
+    }
     el.innerHTML = notebooks.map(nb => `<div class="nb-item ${nb.id === activeNotebookId ? 'active' : ''}" onclick="switchNotebook(${nb.id})"><i data-lucide="book" class="icon" style="width:14px;height:14px;opacity:0.5"></i><span class="nb-name">${esc(nb.name)}</span><span class="nb-badge">${nb.chats}</span><button class="nb-delete" onclick="event.stopPropagation();deleteNotebook(${nb.id})" title="Delete"><i data-lucide="x" class="icon" style="width:12px;height:12px"></i></button></div>`).join('');
+    actions.style.display = activeNotebookId ? 'block' : 'none';
     refreshIcons(el);
 }
 async function switchNotebook(id) { activeNotebookId = id; renderNotebooks(); await Promise.all([loadSources(), loadHistory(), loadNotes(), loadDocument(), updateDiscoverButton()]); closeNoteEditor(); }
 async function createNotebook() { const n = prompt('Notebook name:'); if (!n) return; await fetch(`${API}/api/notebooks`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:n}) }); await loadNotebooks(); }
-async function deleteNotebook(id) { if (!confirm('Delete this notebook?')) return; const r = await fetch(`${API}/api/notebooks/${id}`, {method:'DELETE'}); if (r.ok) { if (activeNotebookId===id) activeNotebookId=null; await loadNotebooks(); } else { const e=await r.json(); alert(e.detail||'Cannot delete'); } }
+async function deleteNotebook(id) { if (!confirm('Delete this notebook?')) return; hideCitation(); const r = await fetch(`${API}/api/notebooks/${id}`, {method:'DELETE'}); if (r.ok) { if (activeNotebookId===id) activeNotebookId=null; await loadNotebooks(); } else { const e=await r.json(); alert(e.detail||'Cannot delete'); } }
 
 async function loadPerformanceMode() {
     try {
