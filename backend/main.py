@@ -1697,109 +1697,200 @@ async def export_document(request: ExportRequest):
         raise HTTPException(status_code=400, detail=f"Unsupported format: {request.format}. Use: txt, md, docx, pdf")
 
 
-# ─── 2D Concept Knowledge Graph ─────────────────────────────────────────────────
+# ─── Editable Concept Board ───────────────────────────────────────────────────
 
-@app.get("/api/graph")
-async def get_concept_graph(notebook_id: int = Query(...)):
-    """Generate 2D Knowledge Graph nodes and edges by extracting semantic keyword intersections."""
-    if not _memory or not _vector_db:
+class ConceptSaveRequest(BaseModel):
+    id: Optional[int] = None
+    notebook_id: int
+    title: str
+    explanation: str
+    links: List[str] = []
+
+class ConceptGenerateRequest(BaseModel):
+    notebook_id: int
+    prompt: str
+
+@app.post("/api/concepts/generate")
+async def generate_concept_from_prompt(request: ConceptGenerateRequest):
+    """Generate a specific concept card using user prompt and relevant documents context."""
+    if not _memory or not _llm_router or not _vector_db or not _embedding_generator:
         raise HTTPException(status_code=503, detail="Not initialized")
 
-    # Fetch sources and notes
-    sources = _memory.get_sources(notebook_id)
-    notes = _memory.list_notes(notebook_id)
-    indexed_notes = [n for n in notes if n.get("indexed")]
+    prompt_text = request.prompt.strip()
+    if not prompt_text:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
-    nodes = []
-    node_id_map = {}
-    current_id = 1
-
-    # 1. Add Source nodes
-    for s in sources:
-        nodes.append({
-            "id": current_id,
-            "label": s["name"],
-            "group": "source",
-            "title": f"Source PDF/Text: {s['name']}"
-        })
-        node_id_map[f"source:{s['name']}"] = current_id
-        current_id += 1
-
-    # 2. Add Note nodes
-    for n in indexed_notes:
-        nodes.append({
-            "id": current_id,
-            "label": f"📝 {n['title']}",
-            "group": "note",
-            "title": f"User Note: {n['title']}"
-        })
-        node_id_map[f"note:{n['id']}"] = current_id
-        current_id += 1
-
-    # Extract keywords/terms to construct connection links
-    import re
-    STOPWORDS = {"the", "and", "a", "of", "to", "in", "is", "that", "it", "he", "was", "for", "on", "are", "as", "with", "his", "they", "i", "at", "be", "this", "have", "from", "or", "one", "had", "by", "word", "but", "not", "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how", "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these", "so", "some", "her", "would", "make", "like", "him", "into", "has", "look", "two", "more", "write", "go", "see", "number", "no", "way", "could", "people", "my", "than", "first", "water", "been", "call", "who", "oil", "its", "now", "find"}
-
-    def extract_keywords(text):
-        if not text:
-            return set()
-        words = re.findall(r'[a-zA-Z]{4,}', text.lower())
-        return set(w for w in words if w not in STOPWORDS)
-
-    # Precompute keyword profiles
-    profiles = {}
-    
-    # Extract keywords for sources (from top chunks in vector database)
-    for s in sources:
-        results = _vector_db.query_by_source(
-            source_file=s["name"],
-            notebook_id=notebook_id,
-            limit=5,
+    try:
+        # Retrieve context from vector db matching the prompt
+        query_vector = _embedding_generator.generate_query_embedding(prompt_text)
+        search_results = _vector_db.search(
+            query_vector=query_vector.tolist(),
+            limit=4,
+            notebook_id=request.notebook_id
         )
-        combined_text = " ".join([r["content"] for r in results])
-        profiles[f"source:{s['name']}"] = extract_keywords(combined_text)
 
-    # Extract keywords for notes
-    for n in indexed_notes:
-        profiles[f"note:{n['id']}"] = extract_keywords(f"{n['title']} {n['content']}")
+        context = "\n".join([r["content"] for r in search_results])
+        sources = list(set([r["source_file"] for r in search_results if r.get("source_file")]))
 
-    # 3. Add Edges based on shared keywords or explicit file title mentions
-    edges = []
-    keys = list(profiles.keys())
-    for i in range(len(keys)):
-        for j in range(i + 1, len(keys)):
-            key_a, key_b = keys[i], keys[j]
-            id_a, id_b = node_id_map.get(key_a), node_id_map.get(key_b)
-            if not id_a or not id_b:
-                continue
+        llm_prompt = f"""You are a concept mapping agent. Using the source material provided, create a new concept card for the topic/question: "{prompt_text}"
 
-            # Check explicit name mention in note
-            explicit_link = False
-            if key_a.startswith("note:") and key_b.startswith("source:"):
-                note_id = key_a.split(":")[1]
-                source_name = key_b.split(":", 1)[1]
-                note = next((n for n in indexed_notes if str(n["id"]) == note_id), None)
-                if note and source_name.lower() in (note["title"] + " " + note["content"]).lower():
-                    explicit_link = True
-            elif key_b.startswith("note:") and key_a.startswith("source:"):
-                note_id = key_b.split(":")[1]
-                source_name = key_a.split(":", 1)[1]
-                note = next((n for n in indexed_notes if str(n["id"]) == note_id), None)
-                if note and source_name.lower() in (note["title"] + " " + note["content"]).lower():
-                    explicit_link = True
+Source Material:
+{context[:3000]}
 
-            # Match shared keywords
-            shared = profiles[key_a].intersection(profiles[key_b])
-            if explicit_link or len(shared) >= 3:
-                label_text = "Refers to file" if explicit_link else ", ".join(list(shared)[:3])
-                edges.append({
-                    "from": id_a,
-                    "to": id_b,
-                    "label": label_text,
-                    "title": f"Shared concepts: {', '.join(shared)}" if shared else "Reference link"
-                })
+Format your response EXACTLY as a JSON object with title and explanation keys, with no other text, commentary, or markdown formatting:
+{{
+  "title": "Concept Name",
+  "explanation": "Short 1-2 sentence definition."
+}}"""
 
-    return {"nodes": nodes, "edges": edges}
+        res = _llm_router.generate(
+            prompt=llm_prompt,
+            system_prompt="You are a JSON-only response writer. Output only raw JSON object with no quotes or markdown.",
+            temperature=0.3
+        )
+        raw_json = res.content.strip()
+        if "```json" in raw_json:
+            raw_json = raw_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_json:
+            raw_json = raw_json.split("```")[1].split("```")[0].strip()
+
+        data = json.loads(raw_json)
+        title = data.get("title", "Core Concept").strip()
+        explanation = data.get("explanation", "").strip()
+
+        if not explanation:
+            explanation = f"Concept relating to: {prompt_text}"
+
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title=title,
+            explanation=explanation,
+            links_json=json.dumps(sources)
+        )
+
+        return {
+            "id": new_id,
+            "title": title,
+            "explanation": explanation,
+            "links": sources
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate concept from prompt: {e}")
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title="Generated Concept",
+            explanation=f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            links_json="[]"
+        )
+        return {
+            "id": new_id,
+            "title": "Generated Concept",
+            "explanation": f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            "links": []
+        }
+
+@app.get("/api/concepts")
+async def get_concepts(notebook_id: int = Query(...)):
+    """Fetch all concepts for a notebook. If empty, auto-generate initial ones from sources."""
+    if not _memory or not _llm_router or not _vector_db:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    concepts = _memory.list_concepts(notebook_id)
+    if not concepts:
+        # Auto-generate initial concepts using LLM
+        sources = _memory.get_sources(notebook_id)
+        if sources:
+            source_content = ""
+            try:
+                search_results = _vector_db.search(
+                    query_vector=[0.0]*384,
+                    limit=5,
+                    notebook_id=notebook_id
+                )
+                source_content = "\n".join([r["content"] for r in search_results])
+            except Exception:
+                pass
+
+            if not source_content.strip():
+                source_content = "Study notebook documents and learning materials."
+
+            prompt = f"""You are a concept mapping agent. Analyze the following source material and identify 3 distinct core concepts, key terms, or core principles.
+For each concept, provide:
+1. A concise concept title (1 to 4 words).
+2. A brief, clear explanation (1 to 2 sentences) summarizing what it is.
+
+Source Material:
+{source_content[:3000]}
+
+Format your response EXACTLY as a JSON array of objects, with no other text, commentary, or markdown formatting:
+[
+  {{"title": "Concept Name", "explanation": "Short 1-2 sentence definition."}}
+]"""
+            try:
+                res = _llm_router.generate(
+                    prompt=prompt,
+                    system_prompt="You are a JSON-only response writer. Output only raw JSON array with no quotes or markdown.",
+                    temperature=0.3
+                )
+                raw_json = res.content.strip()
+                if "```json" in raw_json:
+                    raw_json = raw_json.split("```json")[1].split("```")[0].strip()
+                elif "```" in raw_json:
+                    raw_json = raw_json.split("```")[1].split("```")[0].strip()
+
+                initial_concepts = json.loads(raw_json)
+                for ic in initial_concepts:
+                    links = [sources[0]["name"]] if len(sources) > 0 else []
+                    _memory.create_concept(
+                        notebook_id=notebook_id,
+                        title=ic.get("title", "Core Concept"),
+                        explanation=ic.get("explanation", "Short explanation of the concept."),
+                        links_json=json.dumps(links)
+                    )
+            except Exception as e:
+                logger.error(f"Failed to auto-generate concepts: {e}")
+                _memory.create_concept(
+                    notebook_id=notebook_id,
+                    title="Key Mindset Theme",
+                    explanation="Double click to edit and add your concept explanation here.",
+                    links_json="[]"
+                )
+            concepts = _memory.list_concepts(notebook_id)
+
+    return {"concepts": concepts}
+
+@app.post("/api/concepts")
+async def save_concept(request: ConceptSaveRequest):
+    """Create or update a concept card."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    links_json = json.dumps(request.links)
+    if request.id is not None:
+        updated = _memory.update_concept(
+            concept_id=request.id,
+            title=request.title,
+            explanation=request.explanation,
+            links_json=links_json
+        )
+        return {"status": "updated", "success": updated}
+    else:
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title=request.title,
+            explanation=request.explanation,
+            links_json=links_json
+        )
+        return {"status": "created", "id": new_id}
+
+@app.delete("/api/concepts/{concept_id}")
+async def delete_concept(concept_id: int):
+    """Delete a concept card."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    deleted = _memory.delete_concept(concept_id)
+    return {"status": "deleted", "success": deleted}
 
 
 # ─── Static Frontend ───────────────────────────────────────────────────────────

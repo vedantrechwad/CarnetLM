@@ -113,7 +113,7 @@
             <div class="tab-container">
                 <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
                 <button class="tab" data-tab="guide" onclick="switchTab('guide')">Study Guide</button>
-                <button class="tab" data-tab="graph" onclick="switchTab('graph')">Knowledge Graph</button>
+                <button class="tab" data-tab="graph" onclick="switchTab('graph')">Concept Board</button>
                 <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes <span class="tab-badge" id="notesBadge">0</span></button>
                 <button class="tab" data-tab="editor" onclick="switchTab('editor')">Editor</button>
             </div>
@@ -192,14 +192,24 @@
                 </div>
             </div>
 
-            <!-- Knowledge Graph -->
+            <!-- Concept Board -->
             <div class="tab-panel" id="panel-graph" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
-                <div class="graph-toolbar" style="padding:0.5rem 1.25rem;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
-                    <div style="font-weight:600;font-size:0.875rem">Interactive Knowledge Graph</div>
-                    <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh Graph</button>
+                <div class="graph-toolbar" style="padding:0.5rem 1.25rem;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+                    <div style="font-weight:600;font-size:0.875rem;white-space:nowrap;">Interactive Concept Board</div>
+                    
+                    <!-- AI Concept Generator Input -->
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:450px;">
+                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate a concept card (e.g. 'Explain fixed mindset')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
+                        <button class="btn btn-sm btn-primary" onclick="generateConceptCard()" id="btnGenerateConcept" style="height:32px;white-space:nowrap;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">smart_toy</span> Generate</button>
+                    </div>
+
+                    <div style="display:flex;gap:0.5rem">
+                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add Concept</button>
+                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh</button>
+                    </div>
                 </div>
                 <div class="graph-container" id="graphContainer" style="flex:1;position:relative;background:var(--background)">
-                    <!-- Vis.js canvas will render here -->
+                    <!-- Concepts grid will render here -->
                 </div>
             </div>
 
@@ -1817,81 +1827,190 @@ function runSummary() {
     }
 }
 
-// ─── 2D Concept Knowledge Graph Loader ──────────────────────────────────────────
-
-// ─── 2D Concept Knowledge Graph Loader ──────────────────────────────────────────
-
-let graphNetwork = null;
+// ─── Interactive Concept Board ────────────────────────────────────────────────
+let currentConcepts = [];
 
 async function loadKnowledgeGraph() {
     if (!activeNotebookId) return;
     const container = document.getElementById('graphContainer');
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:0.6"><div class="loading-spinner" style="margin-right:10px"></div> Generating semantic concept connections...</div>';
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:0.6"><div class="loading-spinner" style="margin-right:10px"></div> Synthesizing learning concepts...</div>';
 
     try {
-        const r = await fetch(`${API}/api/graph?notebook_id=${activeNotebookId}`);
+        const r = await fetch(`${API}/api/concepts?notebook_id=${activeNotebookId}`);
         const data = await r.json();
-
-        if (!data.nodes || data.nodes.length === 0) {
-            container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.6;padding:2rem;text-align:center;"><span class="material-symbols-outlined" style="font-size:36px;margin-bottom:0.5rem">hub</span><h4>Empty Graph</h4><p style="font-size:0.875rem;margin-top:0.25rem">Knowledge Graph connects sources and indexed notes automatically once you upload materials.</p></div>';
-            return;
-        }
-
-        container.innerHTML = '';
-        const nodes = new vis.DataSet(data.nodes.map(n => ({
-            ...n,
-            color: n.group === 'source' ? '#3b82f6' : '#10b981',
-            font: { color: 'var(--text-primary)', face: 'Be Vietnam Pro', size: 12 }
-        })));
-        const edges = new vis.DataSet(data.edges.map(e => ({
-            ...e,
-            color: { color: 'var(--border-subtle)', hover: '#3b82f6', highlight: '#3b82f6' },
-            font: { color: 'var(--outline)', face: 'Be Vietnam Pro', size: 10, strokeWidth: 0 }
-        })));
-
-        const visData = { nodes: nodes, edges: edges };
-        const options = {
-            nodes: {
-                shape: 'dot',
-                size: 16,
-                borderWidth: 2,
-                color: { border: '#1e293b' }
-            },
-            edges: {
-                width: 1.5,
-                arrows: { to: { enabled: false } },
-                smooth: { type: 'continuous' }
-            },
-            physics: {
-                barnesHut: { gravitationalConstant: -2000, centralGravity: 0.3, springLength: 95 },
-                stabilization: { iterations: 150 }
-            },
-            interaction: {
-                hover: true,
-                tooltipDelay: 200
-            }
-        };
-
-        graphNetwork = new vis.Network(container, visData, options);
-
-        graphNetwork.on("click", function (params) {
-            if (params.nodes.length > 0) {
-                const nodeId = params.nodes[0];
-                const node = data.nodes.find(n => n.id === nodeId);
-                if (node) {
-                    if (node.group === 'source') {
-                        openSourceViewerByName(node.label);
-                    } else if (node.group === 'note') {
-                        const cleanTitle = node.label.replace('📝 ', '');
-                        const found = notes.find(n => n.title === cleanTitle);
-                        if (found) openNoteEditor(found.id);
-                    }
-                }
-            }
-        });
+        currentConcepts = data.concepts || [];
+        renderConceptBoard();
     } catch (e) {
         console.error(e);
-        container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red-primary)"><span class="material-symbols-outlined" style="margin-right:5px">error</span> Failed to generate Knowledge Graph</div>';
+        container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red-primary)"><span class="material-symbols-outlined" style="margin-right:5px">error</span> Failed to load Concept Board</div>';
+    }
+}
+
+function renderConceptBoard() {
+    const container = document.getElementById('graphContainer');
+    if (!currentConcepts.length) {
+        container.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.6;padding:2rem;text-align:center;">
+                <span class="material-symbols-outlined" style="font-size:36px;margin-bottom:0.5rem">space_dashboard</span>
+                <h4>No Concepts Extracted</h4>
+                <p style="font-size:0.875rem;margin-top:0.25rem">Extract initial concepts from your files or add new cards manually using the buttons above.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="concept-grid">';
+    currentConcepts.forEach(c => {
+        const pillsHtml = sources.map(s => {
+            const isActive = c.links.includes(s.name);
+            return `
+                <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${s.name}')">
+                    ${s.name}
+                </span>
+            `;
+        }).join('');
+
+        html += `
+            <div class="concept-card">
+                <div class="concept-card-header">
+                    <input type="text" class="concept-title-input" value="${escapeHtml(c.title)}" onchange="updateConceptTitle(${c.id}, this.value)" placeholder="Concept Title" />
+                    <button class="concept-delete-btn" onclick="deleteConceptCard(${c.id})">&times;</button>
+                </div>
+                <textarea class="concept-explanation-input" onchange="updateConceptExplanation(${c.id}, this.value)" placeholder="Write a short explanation of this concept...">${escapeHtml(c.explanation)}</textarea>
+                <div class="concept-links-section">
+                    <div class="concept-links-title">Linked Sources</div>
+                    <div class="concept-links-pills">
+                        ${pillsHtml || '<div style="font-size:0.75rem;opacity:0.4">No sources uploaded to link</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+async function addConceptCard() {
+    if (!activeNotebookId) return;
+    try {
+        const r = await fetch(`${API}/api/concepts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                title: "New Concept",
+                explanation: "",
+                links: []
+            })
+        });
+        if (r.ok) {
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to add concept", e);
+    }
+}
+
+async function updateConceptTitle(id, title) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    concept.title = title;
+    await saveConceptToServer(concept);
+}
+
+async function updateConceptExplanation(id, explanation) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    concept.explanation = explanation;
+    await saveConceptToServer(concept);
+}
+
+async function toggleConceptLink(id, sourceName) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    const idx = concept.links.indexOf(sourceName);
+    if (idx > -1) {
+        concept.links.splice(idx, 1);
+    } else {
+        concept.links.push(sourceName);
+    }
+    renderConceptBoard();
+    await saveConceptToServer(concept);
+}
+
+async function saveConceptToServer(concept) {
+    try {
+        await fetch(`${API}/api/concepts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: concept.id,
+                notebook_id: activeNotebookId,
+                title: concept.title,
+                explanation: concept.explanation,
+                links: concept.links
+            })
+        });
+    } catch (e) {
+        console.error("Failed to update concept on server", e);
+    }
+}
+
+async function generateConceptCard() {
+    if (!activeNotebookId) return;
+    const input = document.getElementById('conceptPromptInput');
+    const btn = document.getElementById('btnGenerateConcept');
+    const promptText = input.value.trim();
+    if (!promptText) return;
+
+    input.disabled = true;
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<div class="loading-spinner" style="width:12px;height:12px;border-width:2px;border-top-color:transparent;margin-right:4px;"></div> Generating...';
+
+    try {
+        const r = await fetch(`${API}/api/concepts/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                prompt: promptText
+            })
+        });
+        if (r.ok) {
+            input.value = "";
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to generate concept card from prompt", e);
+    } finally {
+        input.disabled = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+async function deleteConceptCard(id) {
+    if (!confirm("Are you sure you want to delete this concept card?")) return;
+    try {
+        const r = await fetch(`${API}/api/concepts/${id}`, {
+            method: 'DELETE'
+        });
+        if (r.ok) {
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to delete concept card", e);
     }
 }
 

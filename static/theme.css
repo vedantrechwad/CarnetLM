@@ -1870,3 +1870,141 @@ div.vis-tooltip {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 
+/* ─── Concept Board Grid ─── */
+.concept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    padding: 1.5rem;
+    overflow-y: auto;
+    max-height: 100%;
+}
+
+.concept-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.concept-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.concept-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.concept-title-input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    color: var(--text-primary);
+    font-family: var(--font-header);
+    font-size: 1rem;
+    font-weight: 700;
+    width: 100%;
+    padding: 0.125rem 0;
+}
+
+.concept-title-input:focus {
+    outline: none;
+    border-bottom-color: var(--primary);
+}
+
+.concept-delete-btn {
+    background: transparent;
+    border: none;
+    color: var(--outline);
+    font-size: 1.25rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.concept-delete-btn:hover {
+    color: var(--red-primary);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.concept-explanation-input {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding: 0.5rem;
+    resize: none;
+    min-height: 80px;
+    width: 100%;
+}
+
+.concept-explanation-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.concept-links-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 0.75rem;
+}
+
+.concept-links-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--outline);
+    font-weight: 600;
+}
+
+.concept-links-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.concept-link-pill {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.concept-link-pill:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.concept-link-pill.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.4);
+    color: #93c5fd;
+}

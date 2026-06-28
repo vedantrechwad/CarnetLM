@@ -134,6 +134,18 @@ class LocalMemoryLayer:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS concepts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notebook_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                links_json TEXT DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS chunk_text (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notebook_id INTEGER NOT NULL,
@@ -799,6 +811,63 @@ class LocalMemoryLayer:
         self.conn.commit()
         self._ensure_default_notebook()
         logger.info("Memory cleared")
+
+    def list_concepts(self, notebook_id: int) -> List[Dict[str, Any]]:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, notebook_id, title, explanation, links_json, created_at FROM concepts WHERE notebook_id = ? ORDER BY id ASC",
+            (notebook_id,)
+        )
+        concepts = []
+        for r in cursor.fetchall():
+            concepts.append({
+                "id": r[0],
+                "notebook_id": r[1],
+                "title": r[2],
+                "explanation": r[3],
+                "links": json.loads(r[4] or "[]"),
+                "created_at": r[5]
+            })
+        return concepts
+
+    def create_concept(self, notebook_id: int, title: str, explanation: str, links_json: str = "[]") -> int:
+        cursor = self.conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute(
+            "INSERT INTO concepts (notebook_id, title, explanation, links_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            (notebook_id, title, explanation, links_json, now)
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def update_concept(self, concept_id: int, title: Optional[str] = None, explanation: Optional[str] = None, links_json: Optional[str] = None) -> bool:
+        cursor = self.conn.cursor()
+        updates = []
+        params = []
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if explanation is not None:
+            updates.append("explanation = ?")
+            params.append(explanation)
+        if links_json is not None:
+            updates.append("links_json = ?")
+            params.append(links_json)
+        if not updates:
+            return False
+        params.append(concept_id)
+        cursor.execute(
+            f"UPDATE concepts SET {', '.join(updates)} WHERE id = ?",
+            tuple(params)
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_concept(self, concept_id: int) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM concepts WHERE id = ?", (concept_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
 
     def close(self) -> None:
         if self.conn:
