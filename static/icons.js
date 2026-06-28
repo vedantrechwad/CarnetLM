@@ -1,20 +1,19 @@
-/** Lucide icon helpers for CarnetLM */
-function icon(name, size = 16) {
-    return `<i data-lucide="${name}" class="icon" style="width:${size}px;height:${size}px"></i>`;
+/** Material Symbols icon helpers for CarnetLM */
+function icon(name, size = 20) {
+    return `<span class="material-symbols-outlined" style="font-size:${size}px">${name}</span>`;
 }
 
 function refreshIcons(root) {
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons({ attrs: { 'stroke-width': 1.75 }, nameAttr: 'data-lucide', root: root || document });
-    }
+    // Material Symbols are a web font — no JS initialization needed.
+    // This function is kept for backward compatibility with existing calls.
 }
 
 function sourceIcon(type) {
     const map = {
-        Website: 'globe',
-        YouTube: 'play-circle',
-        Clipboard: 'clipboard',
-        Document: 'file-text',
+        Website: 'language',
+        YouTube: 'play_circle',
+        Clipboard: 'content_paste',
+        Document: 'description',
     };
-    return map[type] || 'file-text';
+    return map[type] || 'description';
 }
