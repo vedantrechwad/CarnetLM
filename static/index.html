@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/theme.css?v=6.0">
-    <script src="/static/icons.js"></script>
+    <script src="/static/icons.js?v=7.0"></script>
     <script>
         const savedTheme = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
@@ -61,18 +61,45 @@
             <div id="sourceList" class="sidebar-list custom-scrollbar"></div>
 
             <!-- Sidebar Actions Section -->
-            <div class="sidebar-actions" id="sidebarActions" style="display:none;">
-                <div class="sidebar-actions-row">
-                    <button class="sidebar-add" onclick="openModal('upload')"><span class="material-symbols-outlined" style="font-size:16px">upload_file</span> File</button>
-                    <button class="sidebar-add" onclick="openModal('url')"><span class="material-symbols-outlined" style="font-size:16px">link</span> URL</button>
-                    <button class="sidebar-add" onclick="openModal('youtube')"><span class="material-symbols-outlined" style="font-size:16px">smart_display</span> YouTube</button>
-                    <button class="sidebar-add" onclick="openModal('clipboard')"><span class="material-symbols-outlined" style="font-size:16px">content_paste</span> Paste</button>
+            <div class="sidebar-actions-group" id="sidebarActions" style="display:none;">
+                <div class="sidebar-group-title">Add Sources</div>
+                <div class="sources-grid">
+                    <button class="source-grid-btn" onclick="openModal('upload')">
+                        <span class="material-symbols-outlined">upload_file</span>
+                        <span>File</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('url')">
+                        <span class="material-symbols-outlined">link</span>
+                        <span>URL</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('youtube')">
+                        <span class="material-symbols-outlined">smart_display</span>
+                        <span>YouTube</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('clipboard')">
+                        <span class="material-symbols-outlined">content_paste</span>
+                        <span>Paste</span>
+                    </button>
                 </div>
-                <div class="sidebar-actions-row">
-                    <button class="sidebar-add" onclick="openModal('search')"><span class="material-symbols-outlined" style="font-size:16px">search</span> Search</button>
-                    <button class="sidebar-add" id="discoverBtn" style="display:none" onclick="openDiscoverModal()"><span class="material-symbols-outlined" style="font-size:16px">language</span> Discover</button>
-                    <button class="sidebar-add" onclick="runSummary()"><span class="material-symbols-outlined" style="font-size:16px">auto_awesome</span> Guide</button>
-                    <button class="sidebar-add" onclick="openModal('compare')"><span class="material-symbols-outlined" style="font-size:16px">compare_arrows</span> Compare</button>
+
+                <div class="sidebar-group-title" style="margin-top: 1.25rem;">Research Tools</div>
+                <div class="tools-list">
+                    <button class="tool-list-btn" onclick="openModal('search')">
+                        <span class="material-symbols-outlined">search</span>
+                        <span>Semantic Search</span>
+                    </button>
+                    <button class="tool-list-btn" onclick="runSummary()">
+                        <span class="material-symbols-outlined">auto_awesome</span>
+                        <span>Study Guide</span>
+                    </button>
+                    <button class="tool-list-btn" onclick="openModal('compare')">
+                        <span class="material-symbols-outlined">compare_arrows</span>
+                        <span>Compare Sources</span>
+                    </button>
+                    <button class="tool-list-btn" id="discoverBtn" style="display:none" onclick="openDiscoverModal()">
+                        <span class="material-symbols-outlined">language</span>
+                        <span>Web Discover</span>
+                    </button>
                 </div>
             </div>
         </div>

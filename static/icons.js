@@ -10,10 +10,16 @@ function refreshIcons(root) {
 
 function sourceIcon(type) {
     const map = {
-        Website: 'language',
-        YouTube: 'play_circle',
-        Clipboard: 'content_paste',
-        Document: 'description',
+        website: 'language',
+        youtube: 'play_circle',
+        clipboard: 'content_paste',
+        document: 'description',
+        file: 'description',
     };
-    return map[type] || 'description';
+    const norm = (type || '').toLowerCase().trim();
+    if (norm.includes('web') || norm.includes('link') || norm.includes('url')) return 'language';
+    if (norm.includes('youtube') || norm.includes('video') || norm.includes('play')) return 'play_circle';
+    if (norm.includes('clip') || norm.includes('paste')) return 'content_paste';
+    return map[norm] || 'description';
 }
+
