@@ -263,10 +263,52 @@ class MilvusVectorDB:
         logger.info(f"Collection '{self.collection_name}' created with new schema")
         self.collection_exists = True
     
+    def _cleanup_temp_files(self):
+        """Clean up stale manifest.json.tmp and other temporary files from MilvusLite storage."""
+        try:
+            from pathlib import Path
+            db_dir = Path(self.db_path)
+            if db_dir.is_file() or db_dir.suffix:
+                db_dir = db_dir.parent
+            if db_dir.exists() and db_dir.is_dir():
+                for tmp_file in db_dir.rglob("*.tmp"):
+                    if tmp_file.is_file():
+                        try:
+                            tmp_file.unlink()
+                            logger.info(f"Cleaned up stale temp file: {tmp_file}")
+                        except Exception as e:
+                            logger.debug(f"Could not delete stale temp file {tmp_file}: {e}")
+        except Exception as e:
+            logger.debug(f"Error scanning temp files: {e}")
+
     def _initialize_client(self):
         try:
-            self.client = MilvusClient(uri=self.db_path)
-            logger.info(f"Milvus client initialized with database: {self.db_path}")
+            self._cleanup_temp_files()
+            client = MilvusClient(uri=self.db_path)
+            
+            # Wrap methods to catch WinError 183 and retry after cleaning temp files
+            def make_safe_wrapper(func_name, original_func):
+                def safe_func(*args, **kwargs):
+                    try:
+                        return original_func(*args, **kwargs)
+                    except Exception as e:
+                        err_str = str(e)
+                        if "WinError 183" in err_str or "already exists" in err_str:
+                            logger.warning(f"Milvus operation '{func_name}' failed with rename/lock error, cleaning temp files and retrying: {e}")
+                            self._cleanup_temp_files()
+                            return original_func(*args, **kwargs)
+                        raise
+                return safe_func
+
+            # Wrap the commonly used modifying methods
+            methods_to_wrap = ["insert", "delete", "upsert", "create_collection", "drop_collection", "create_index", "drop_index", "query", "search"]
+            for m_name in methods_to_wrap:
+                if hasattr(client, m_name):
+                    orig = getattr(client, m_name)
+                    setattr(client, m_name, make_safe_wrapper(m_name, orig))
+            
+            self.client = client
+            logger.info(f"Milvus client initialized with database: {self.db_path} (wrapped for self-healing)")
             
         except Exception as e:
             logger.error(f"Failed to initialize Milvus client: {str(e)}")
@@ -487,6 +529,7 @@ class MilvusVectorDB:
         use_binary_quantization: bool = False
     ) -> List[Dict[str, Any]]:
         try:
+            logger.info(f"[Milvus Search] Called with query_vector length={len(query_vector)}, limit={limit}, notebook_id={notebook_id}, filter_expr={filter_expr}")
             if use_binary_quantization:
                 search_params = {
                     "params": {
@@ -507,6 +550,7 @@ class MilvusVectorDB:
             if notebook_id is not None:
                 ref_tracker = get_reference_tracker()
                 allowed_chunk_ids = ref_tracker.get_chunks_for_notebook(notebook_id)
+                logger.info(f"[Milvus Search] allowed_chunk_ids count={len(allowed_chunk_ids)} for notebook_id={notebook_id}")
                 
                 if allowed_chunk_ids:
                     # Build filter for allowed chunks
@@ -521,6 +565,7 @@ class MilvusVectorDB:
                     return []
 
             # Perform vector similarity search
+            logger.info(f"[Milvus Search] Executing search client call. final_filter length={len(final_filter) if final_filter else 0}")
             results = self.client.search(
                 collection_name=self.collection_name,
                 data=[query_vector],
@@ -534,6 +579,7 @@ class MilvusVectorDB:
                     "content_hash"
                 ]
             )
+            logger.info(f"[Milvus Search] Client search returned raw results count={len(results[0]) if results else 0}")
 
             formatted_results = []
             if results and len(results) > 0:
@@ -713,10 +759,19 @@ class MilvusVectorDB:
             if orphaned_chunks:
                 # Build filter expression for orphaned chunks
                 chunk_filter = " or ".join([f'id == "{_escape_filter_string(cid)}"' for cid in orphaned_chunks])
-                self.client.delete(
-                    collection_name=self.collection_name,
-                    filter=chunk_filter
-                )
+                try:
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        filter=chunk_filter
+                    )
+                except Exception as del_err:
+                    # Clean up and retry once if it is a WinError 183 or file lock conflict
+                    logger.warning(f"Initial delete by source failed, cleaning stale temp files and retrying: {del_err}")
+                    self._cleanup_temp_files()
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        filter=chunk_filter
+                    )
                 logger.info(f"Deleted {len(orphaned_chunks)} orphaned chunks from Milvus")
             else:
                 logger.info(f"No orphaned chunks to delete (all chunks still referenced)")
@@ -751,10 +806,19 @@ class MilvusVectorDB:
             # Delete only orphaned chunks from Milvus
             if orphaned_chunks:
                 chunk_filter = " or ".join([f'id == "{_escape_filter_string(cid)}"' for cid in orphaned_chunks])
-                self.client.delete(
-                    collection_name=self.collection_name,
-                    filter=chunk_filter
-                )
+                try:
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        filter=chunk_filter
+                    )
+                except Exception as del_err:
+                    # Clean up and retry once if it is a WinError 183 or file lock conflict
+                    logger.warning(f"Initial delete by notebook failed, cleaning stale temp files and retrying: {del_err}")
+                    self._cleanup_temp_files()
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        filter=chunk_filter
+                    )
                 logger.info(f"Deleted {len(orphaned_chunks)} orphaned chunks from Milvus for notebook {notebook_id}")
             else:
                 logger.info(f"No orphaned chunks to delete for notebook {notebook_id} (all chunks still referenced)")

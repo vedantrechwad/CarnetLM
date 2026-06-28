@@ -151,6 +151,15 @@ class LocalMemoryLayer:
             ON chunk_text(notebook_id)
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS study_guides (
+                notebook_id INTEGER PRIMARY KEY,
+                content_json TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+            )
+        """)
+
         self.conn.commit()
         self._migrate_notes_column()
         self._ensure_default_performance_mode()
@@ -756,6 +765,27 @@ class LocalMemoryLayer:
             cursor.execute("SELECT id FROM documents WHERE notebook_id = ?", (notebook_id,))
             row = cursor.fetchone()
             return row[0] if row else 0
+
+    def save_study_guide(self, notebook_id: int, content_json: str) -> None:
+        """Save or update study guide for a notebook."""
+        from datetime import datetime
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """INSERT OR REPLACE INTO study_guides (notebook_id, content_json, updated_at)
+               VALUES (?, ?, ?)""",
+            (notebook_id, content_json, datetime.now().isoformat())
+        )
+        self.conn.commit()
+
+    def get_study_guide(self, notebook_id: int) -> Optional[str]:
+        """Get study guide for a notebook."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT content_json FROM study_guides WHERE notebook_id = ?",
+            (notebook_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     # ─── Cleanup ───────────────────────────────────────────────────────────
 

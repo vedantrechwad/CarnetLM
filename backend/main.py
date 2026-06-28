@@ -261,6 +261,9 @@ class PerformanceSettingsUpdate(BaseModel):
     mode: str = "fast"
 
 
+
+
+
 # ─── App ───────────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -990,10 +993,21 @@ async def clear_history(notebook_id: int = Query(1)):
 
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
 
+@app.get("/api/summary")
+async def get_summary(notebook_id: int = Query(...)):
+    """Fetch saved study guide/summary for a notebook."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    guide = _memory.get_study_guide(notebook_id)
+    if guide:
+        return json.loads(guide)
+    return {"summary": "", "sources_used": []}
+
+
 @app.post("/api/summary")
 async def generate_summary(request: SummaryRequest):
-    """Auto-generate a summary / study guide from all sources."""
-    if not _llm_router or not _vector_db or not _embedding_generator:
+    """Auto-generate and save a structured study guide with inline citations."""
+    if not _llm_router or not _vector_db or not _embedding_generator or not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
 
     # Get all sources for this notebook
@@ -1014,32 +1028,56 @@ async def generate_summary(request: SummaryRequest):
     if not search_results:
         raise HTTPException(status_code=400, detail="No content found in sources")
 
-    # Build context from retrieved chunks
-    context = "\n\n".join([r["content"] for r in search_results[:15]])
-    source_names = list(set(r["citation"]["source_file"] for r in search_results))
+    # Build context from retrieved chunks with clear reference numbers
+    context_parts = []
+    sources_used = []
+    for i, r in enumerate(search_results[:15]):
+        ref = f"[{i + 1}]"
+        citation = r.get("citation", {})
+        context_parts.append(f"{ref} {r['content']}")
+        sources_used.append({
+            "reference": ref,
+            "source_file": citation.get("source_file", "Unknown"),
+            "source_type": citation.get("source_type", "unknown"),
+            "page_number": citation.get("page_number"),
+            "chunk_id": r.get("id", ""),
+            "chunk_index": citation.get("chunk_index"),
+            "relevance_score": r.get("score", r.get("rrf_score", 0)),
+            "text": r["content"][:300],
+        })
+
+    context = "\n\n".join(context_parts)
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Based on the following source material, create a comprehensive study guide with:
-1. **Executive Summary** (2-3 paragraphs)
-2. **Key Topics** (bullet points with brief explanations)
-3. **Important Details** (notable facts, figures, or concepts)
-4. **Connections** (how different topics relate to each other)
+            prompt=f"""Based on the following source material, create a comprehensive study guide.
+Cite the sources you use using their numbers, e.g. [1], [2], etc.
+
+Rules:
+1. Every major fact, concept, or summary MUST be grounded in the context and cite the corresponding source numbers, e.g. [1].
+2. Structure the guide with the following sections:
+   - **Executive Summary**: A high-level overview of the notebook materials.
+   - **Key Concepts**: Core terms, definitions, and theories, citing source numbers.
+   - **Important Details**: Facts, figures, or notable connections.
 
 Source Material:
-{context}
-
-Sources used: {', '.join(source_names)}""",
-            system_prompt="You are an expert study guide creator. Create clear, organized, and comprehensive summaries.",
+{context}""",
+            system_prompt="You are an expert study guide creator. Create structured summaries with clear source citations [1], [2], etc.",
             temperature=0.3,
             max_tokens=2000,
         )
-        return {
+        
+        guide_data = {
             "summary": result.content,
-            "sources_used": source_names,
+            "sources_used": sources_used,
             "provider": result.provider,
             "model": result.model,
         }
+        
+        # Save to database
+        _memory.save_study_guide(request.notebook_id, json.dumps(guide_data))
+        return guide_data
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1213,8 +1251,11 @@ async def compare_sources(request: CompareRequest):
     if len(request.source_names) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 sources to compare")
 
-    # Get chunks from each source using exact query (not semantic search)
-    source_contents = {}
+    # Get chunks from each source and build unified reference context
+    context_parts = []
+    sources_used = []
+    cid = 1
+    
     for name in request.source_names:
         results = _vector_db.query_by_source(
             source_file=name,
@@ -1226,29 +1267,49 @@ async def compare_sources(request: CompareRequest):
             x.get("citation", {}).get("page_number") or 0,
             x.get("citation", {}).get("chunk_index", 0),
         ))
-        source_contents[name] = "\n".join([r["content"][:500] for r in results[:5]])
+        
+        for r in results[:5]:  # limit to top 5 representative chunks per source
+            ref = f"[{cid}]"
+            citation = r.get("citation", {})
+            context_parts.append(f"{ref} (Source: {name}):\n{r['content']}")
+            sources_used.append({
+                "reference": ref,
+                "source_file": name,
+                "source_type": citation.get("source_type", "unknown"),
+                "page_number": citation.get("page_number"),
+                "chunk_id": r.get("id", ""),
+                "chunk_index": citation.get("chunk_index"),
+                "relevance_score": r.get("score", r.get("rrf_score", 0)),
+                "text": r["content"][:300],
+            })
+            cid += 1
 
-    # Build comparison prompt
-    sources_text = ""
-    for name, content in source_contents.items():
-        sources_text += f"\n--- Source: {name} ---\n{content}\n"
+    context = "\n\n".join(context_parts)
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Compare and contrast the following sources. Create a structured comparison with:
-1. **Common Themes** — What topics/ideas appear in all sources
-2. **Key Differences** — Where sources diverge or provide unique information
-3. **Comparison Table** — A markdown table comparing key aspects
-4. **Synthesis** — What you learn by combining all sources together
+            prompt=f"""Compare and contrast the following sources.
+Cite the sources you reference using their numbers, e.g. [1], [2], etc.
 
-{sources_text}""",
-            system_prompt="You are an expert analyst. Create clear, structured comparisons. Use markdown formatting.",
+Rules:
+1. Every comparison fact or unique detail MUST cite the corresponding source numbers, e.g. [1].
+2. Structure the comparison with the following sections:
+   - **Common Themes**: What topics/ideas appear across the sources.
+   - **Key Differences**: Where sources diverge or provide unique information.
+   - **Comparison Table**: A markdown table comparing key aspects.
+   - **Synthesis**: Summary of the combined knowledge.
+
+Source Material:
+{context}""",
+            system_prompt="You are an expert analyst. Create structured, clear comparisons, citing sources with [1], [2], etc.",
             temperature=0.3,
             max_tokens=2000,
         )
         return {
             "comparison": result.content,
-            "sources_compared": request.source_names,
+            "sources_used": sources_used,
+            "provider": result.provider,
+            "model": result.model,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1634,6 +1695,111 @@ async def export_document(request: ExportRequest):
 
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {request.format}. Use: txt, md, docx, pdf")
+
+
+# ─── 2D Concept Knowledge Graph ─────────────────────────────────────────────────
+
+@app.get("/api/graph")
+async def get_concept_graph(notebook_id: int = Query(...)):
+    """Generate 2D Knowledge Graph nodes and edges by extracting semantic keyword intersections."""
+    if not _memory or not _vector_db:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    # Fetch sources and notes
+    sources = _memory.get_sources(notebook_id)
+    notes = _memory.list_notes(notebook_id)
+    indexed_notes = [n for n in notes if n.get("indexed")]
+
+    nodes = []
+    node_id_map = {}
+    current_id = 1
+
+    # 1. Add Source nodes
+    for s in sources:
+        nodes.append({
+            "id": current_id,
+            "label": s["name"],
+            "group": "source",
+            "title": f"Source PDF/Text: {s['name']}"
+        })
+        node_id_map[f"source:{s['name']}"] = current_id
+        current_id += 1
+
+    # 2. Add Note nodes
+    for n in indexed_notes:
+        nodes.append({
+            "id": current_id,
+            "label": f"📝 {n['title']}",
+            "group": "note",
+            "title": f"User Note: {n['title']}"
+        })
+        node_id_map[f"note:{n['id']}"] = current_id
+        current_id += 1
+
+    # Extract keywords/terms to construct connection links
+    import re
+    STOPWORDS = {"the", "and", "a", "of", "to", "in", "is", "that", "it", "he", "was", "for", "on", "are", "as", "with", "his", "they", "i", "at", "be", "this", "have", "from", "or", "one", "had", "by", "word", "but", "not", "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how", "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these", "so", "some", "her", "would", "make", "like", "him", "into", "has", "look", "two", "more", "write", "go", "see", "number", "no", "way", "could", "people", "my", "than", "first", "water", "been", "call", "who", "oil", "its", "now", "find"}
+
+    def extract_keywords(text):
+        if not text:
+            return set()
+        words = re.findall(r'[a-zA-Z]{4,}', text.lower())
+        return set(w for w in words if w not in STOPWORDS)
+
+    # Precompute keyword profiles
+    profiles = {}
+    
+    # Extract keywords for sources (from top chunks in vector database)
+    for s in sources:
+        results = _vector_db.query_by_source(
+            source_file=s["name"],
+            notebook_id=notebook_id,
+            limit=5,
+        )
+        combined_text = " ".join([r["content"] for r in results])
+        profiles[f"source:{s['name']}"] = extract_keywords(combined_text)
+
+    # Extract keywords for notes
+    for n in indexed_notes:
+        profiles[f"note:{n['id']}"] = extract_keywords(f"{n['title']} {n['content']}")
+
+    # 3. Add Edges based on shared keywords or explicit file title mentions
+    edges = []
+    keys = list(profiles.keys())
+    for i in range(len(keys)):
+        for j in range(i + 1, len(keys)):
+            key_a, key_b = keys[i], keys[j]
+            id_a, id_b = node_id_map.get(key_a), node_id_map.get(key_b)
+            if not id_a or not id_b:
+                continue
+
+            # Check explicit name mention in note
+            explicit_link = False
+            if key_a.startswith("note:") and key_b.startswith("source:"):
+                note_id = key_a.split(":")[1]
+                source_name = key_b.split(":", 1)[1]
+                note = next((n for n in indexed_notes if str(n["id"]) == note_id), None)
+                if note and source_name.lower() in (note["title"] + " " + note["content"]).lower():
+                    explicit_link = True
+            elif key_b.startswith("note:") and key_a.startswith("source:"):
+                note_id = key_b.split(":")[1]
+                source_name = key_a.split(":", 1)[1]
+                note = next((n for n in indexed_notes if str(n["id"]) == note_id), None)
+                if note and source_name.lower() in (note["title"] + " " + note["content"]).lower():
+                    explicit_link = True
+
+            # Match shared keywords
+            shared = profiles[key_a].intersection(profiles[key_b])
+            if explicit_link or len(shared) >= 3:
+                label_text = "Refers to file" if explicit_link else ", ".join(list(shared)[:3])
+                edges.append({
+                    "from": id_a,
+                    "to": id_b,
+                    "label": label_text,
+                    "title": f"Shared concepts: {', '.join(shared)}" if shared else "Reference link"
+                })
+
+    return {"nodes": nodes, "edges": edges}
 
 
 # ─── Static Frontend ───────────────────────────────────────────────────────────

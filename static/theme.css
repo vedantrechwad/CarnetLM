@@ -1658,3 +1658,215 @@ a { color: inherit; text-decoration: none; }
     .main { margin-left: 0 !important; }
     .msg-bubble { box-shadow: none !important; border: 1px solid #ccc !important; }
 }
+
+/* ─── Study Guide Panel ─── */
+#panel-guide {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    background: var(--bg-surface);
+    height: 100%;
+}
+#panel-guide.active {
+    display: flex;
+}
+.guide-toolbar {
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: 0.5rem;
+    background: var(--bg-surface);
+    z-index: 5;
+    flex-shrink: 0;
+}
+.guide-body-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    height: 100%;
+}
+.guide-onboarding {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex: 1;
+    max-width: 500px;
+    margin: auto;
+    padding: 2rem;
+    gap: 0.75rem;
+}
+.guide-empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: rgba(217, 119, 6, 0.08);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.04);
+}
+.guide-onboarding h3 {
+    font-family: var(--font-headline);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--on-surface);
+}
+.guide-onboarding p {
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    color: var(--secondary);
+    line-height: 1.5;
+    margin-bottom: 1rem;
+}
+.guide-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 0.75rem;
+}
+.guide-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(217, 119, 6, 0.15);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: guide-spin 1s linear infinite;
+}
+@keyframes guide-spin {
+    to { transform: rotate(360deg); }
+}
+.guide-loading h4 {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--primary);
+    font-weight: 600;
+}
+.guide-loading p {
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    color: var(--outline);
+}
+.guide-workspace {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    height: 100%;
+}
+.guide-content-scroller {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem 2.5rem;
+    color: var(--on-surface);
+}
+.guide-content-scroller h1, .guide-content-scroller h2, .guide-content-scroller h3 {
+    font-family: var(--font-headline);
+    color: var(--on-surface);
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    font-weight: 700;
+}
+.guide-content-scroller h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.5rem; }
+.guide-content-scroller h2 { font-size: 1.2rem; }
+.guide-content-scroller h3 { font-size: 1rem; }
+.guide-content-scroller p {
+    margin-bottom: 1rem;
+    line-height: 1.6;
+    color: var(--on-surface-variant, #27211d);
+}
+.guide-content-scroller ul, .guide-content-scroller ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+.guide-content-scroller li {
+    margin-bottom: 0.35rem;
+}
+.citation-link {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(217, 119, 6, 0.08);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 0.25rem;
+    border: 1px solid rgba(217, 119, 6, 0.15);
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+}
+.citation-link:hover {
+    background: var(--primary);
+    color: #ffffff;
+    box-shadow: var(--shadow-sm);
+}
+.guide-sources-panel {
+    background: var(--bg-sidebar);
+}
+.guide-source-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: var(--on-surface);
+    cursor: pointer;
+    margin-bottom: 0.25rem;
+    transition: all 0.15s;
+}
+.guide-source-item:hover {
+    background: var(--border-subtle);
+}
+.guide-source-num {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--outline);
+    border: 1px solid rgba(85, 67, 54, 0.1);
+}
+.guide-source-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+/* ─── Vis.js Knowledge Graph Canvas ─── */
+.graph-container {
+    width: 100%;
+    height: 100%;
+    outline: none;
+}
+.vis-network {
+    outline: none;
+}
+div.vis-tooltip {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+    font-family: var(--font-body) !important;
+    font-size: 0.75rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+

@@ -145,25 +145,31 @@ class DocumentProcessor:
 
 
     def _extract_pdf_pages_raw(self, doc) -> tuple[List[tuple[int, str]], Dict[str, str], int]:
-
         pages: List[tuple[int, str]] = []
-
         page_text: Dict[str, str] = {}
-
         total_pages = len(doc)
 
         for page_num in range(total_pages):
-
             page = doc.load_page(page_num)
-
             text = page.get_text()
 
+            if not text.strip():
+                # Scanned or image-only page: trigger EasyOCR fallback
+                try:
+                    logger.info(f"Page {page_num + 1} has no digital text layer. Falling back to EasyOCR...")
+                    from src.document_processing.ocr_service import extract_text_from_image
+                    pix = page.get_pixmap(dpi=150)
+                    img_bytes = pix.tobytes("png")
+                    ocr_text = extract_text_from_image(img_bytes)
+                    if ocr_text:
+                        text = ocr_text
+                        logger.info(f"OCR extracted {len(ocr_text)} characters from page {page_num + 1}")
+                except Exception as ocr_err:
+                    logger.error(f"OCR fallback failed on page {page_num + 1}: {ocr_err}")
+
             if text.strip():
-
                 p = page_num + 1
-
                 pages.append((p, text))
-
                 page_text[str(p)] = text
 
         return pages, page_text, total_pages

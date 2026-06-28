@@ -117,9 +117,9 @@ class ChunkingService:
                 )
                 chunk_index += 1
 
-            start = max(end - self.chunk_overlap, start + 1)
-            if start >= len(text):
+            if end >= len(text):
                 break
+            start = max(end - self.chunk_overlap, start + 1)
 
         return chunks
 
