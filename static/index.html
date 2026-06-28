@@ -36,7 +36,8 @@
 
 <div class="app">
     <!-- ═══ Sidebar ═══ -->
-    <div class="sidebar">
+    <!-- ═══ Left Sidebar ═══ -->
+    <div class="sidebar sidebar-left">
         <div class="sidebar-header">
             <div class="logo">
                 <span class="material-symbols-outlined logo-icon" style="font-size:20px;font-variation-settings:'FILL' 1">auto_stories</span>
@@ -45,21 +46,6 @@
             <div class="logo-sub">AI Research Engine</div>
         </div>
         <div class="sidebar-content custom-scrollbar">
-            <!-- Notebooks Section -->
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">
-                    Notebooks
-                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="createNotebook()" title="New Notebook">+ NEW</button>
-                </div>
-            </div>
-            <div class="sidebar-list custom-scrollbar" id="notebookList"></div>
-
-            <!-- Sources Section -->
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">Sources <span id="sourceCount" style="font-weight:400;color:var(--outline)">0</span></div>
-            </div>
-            <div id="sourceList" class="sidebar-list custom-scrollbar"></div>
-
             <!-- Sidebar Actions Section -->
             <div class="sidebar-actions-group" id="sidebarActions" style="display:none;">
                 <div class="sidebar-group-title">Add Sources</div>
@@ -191,6 +177,33 @@
                     <div class="editor-container"><div id="quillEditor"></div></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ═══ Right Sidebar ═══ -->
+    <div class="sidebar sidebar-right">
+        <div class="sidebar-header">
+            <div class="logo" style="font-size: 1.05rem;">
+                <span class="material-symbols-outlined logo-icon" style="font-size:18px;">folder_open</span>
+                Context & Files
+            </div>
+        </div>
+        
+        <div class="sidebar-content custom-scrollbar">
+            <!-- Notebooks Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">
+                    Notebooks
+                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="createNotebook()" title="New Notebook">+ NEW</button>
+                </div>
+            </div>
+            <div class="sidebar-list custom-scrollbar" id="notebookList"></div>
+
+            <!-- Sources Section -->
+            <div class="sidebar-section" style="margin-top: 1rem;">
+                <div class="sidebar-section-title">Sources <span id="sourceCount" class="tab-badge" style="margin-left: 0.5rem;">0</span></div>
+            </div>
+            <div id="sourceList" class="sidebar-list custom-scrollbar"></div>
         </div>
     </div>
 </div>
