@@ -12,6 +12,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     # Document processing
     "pymupdf>=1.26.4",
+    "easyocr>=1.7.1",
     # Embeddings & Vector DB (local, no API needed)
     "fastembed>=0.7.3",
     "pymilvus>=2.6.2",

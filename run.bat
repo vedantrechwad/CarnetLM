@@ -25,6 +25,15 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000.*LISTENING" 2^>nul') d
     taskkill /PID %%a /F >nul 2>&1
 )
 
+:: Sync/Install all dependencies declared in pyproject.toml
+echo Syncing and installing project dependencies...
+uv sync
+if %ERRORLEVEL% neq 0 (
+    echo [WARNING] 'uv sync' failed. Trying fallback 'uv pip install -e .'...
+    uv pip install -r requirements.txt
+)
+echo.
+
 echo Starting DocChat on http://localhost:8000
 echo Press Ctrl+C to stop.
 echo.
