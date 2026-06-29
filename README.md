@@ -45,7 +45,7 @@ CarnetLM is a private, local-first AI-powered document research assistant and Q&
 - **Document Processing**: `pymupdf` (PDF content extraction) and `easyocr` (OCR image scanning).
 - **Web Scraping**: `httpx`, `beautifulsoup4`, and `trafilatura` for clean content extraction.
 - **YouTube Extractors**: `yt-dlp` for video subtitles parsing.
-- **LLM Engine**: Google Gemini 2.5 Flash API client (default) with offline local Ollama model backup fallbacks.
+- **LLM Engine**: Local Ollama execution (running recommended `qwen2.5` model) with optional Google Gemini 2.5 Flash API client for cloud-acceleration.
 
 ---
 
@@ -79,50 +79,50 @@ CarnetLM/
 
 ## Quick Start
 
-### Windows Setup (Automatic)
+### 1. Ollama Setup (Required for Local-First)
 
-1. Clone this repository to your computer.
-2. Create a `.env` file in the root folder (see `.env.example` as a template) and add your `GEMINI_API_KEY`.
-3. Double-click the `run.bat` file.
-   - It will automatically check for the `uv` tool manager.
-   - It runs dependency synchronization (`uv sync`).
-   - It launches the browser and opens **http://localhost:8000** automatically.
+CarnetLM is designed to run entirely on your local machine:
+1. Download and install [Ollama](https://ollama.ai).
+2. Ensure Ollama is running in the background.
+3. Download the recommended model (Qwen 2.5):
+   ```bash
+   ollama pull qwen2.5
+   ```
 
-### macOS / Linux Setup (Manual)
+### 2. Configure Environment
 
+1. Copy `.env.example` to create your `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and configure your settings:
+   - By default, `OLLAMA_MODEL=qwen2.5` is set.
+   - **Optional Cloud Acceleration**: Add your `GEMINI_API_KEY` to run with Gemini 2.5 Flash. If left blank, CarnetLM will run completely offline on your local Ollama instance.
+
+### 3. Start the Application
+
+#### Windows Setup (Automatic)
+Simply double-click the `run.bat` file in the root directory.
+- It will automatically check for the `uv` tool manager.
+- It runs dependency synchronization (`uv sync`).
+- It launches the browser and opens **http://localhost:8000** automatically.
+
+#### macOS / Linux Setup (Manual)
 1. Ensure you have **Python 3.11+** installed.
 2. Install the [uv package manager](https://docs.astral.sh/uv/) (highly recommended):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-3. Set up your environment file:
-   ```bash
-   cp .env.example .env
-   # Open .env and insert your GEMINI_API_KEY
-   ```
-4. Install all dependencies:
+3. Install dependencies:
    ```bash
    uv sync
    ```
-5. Run the web server:
+4. Start the FastAPI server:
    ```bash
    uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000
    ```
-6. Open your web browser to **http://localhost:8000**.
+5. Open your browser and navigate to **http://localhost:8000**.
 
-### Optional: Ollama Offline Fallback
-
-For fully offline/local LLM execution:
-1. Install [Ollama](https://ollama.ai).
-2. Pull your model of choice (e.g. `llama3` or `phi3`):
-   ```bash
-   ollama pull llama3
-   ```
-3. Configure your `.env` file:
-   ```env
-   OLLAMA_BASE_URL=http://localhost:11434
-   OLLAMA_MODEL=llama3
-   ```
 
 ---
 
