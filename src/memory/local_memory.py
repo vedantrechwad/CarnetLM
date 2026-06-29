@@ -178,6 +178,10 @@ class LocalMemoryLayer:
             cursor.execute("ALTER TABLE concepts ADD COLUMN sort_order INTEGER DEFAULT 0")
         except Exception:
             pass
+        try:
+            cursor.execute("ALTER TABLE concepts ADD COLUMN leitner_box INTEGER DEFAULT 1")
+        except Exception:
+            pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chunk_text (
@@ -863,7 +867,7 @@ class LocalMemoryLayer:
     def list_concepts(self, notebook_id: int) -> List[Dict[str, Any]]:
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT id, notebook_id, title, explanation, links_json, x, y, sort_order, created_at FROM concepts WHERE notebook_id = ? ORDER BY sort_order ASC, id ASC",
+            "SELECT id, notebook_id, title, explanation, links_json, x, y, sort_order, created_at, leitner_box FROM concepts WHERE notebook_id = ? ORDER BY sort_order ASC, id ASC",
             (notebook_id,)
         )
         concepts = []
@@ -877,7 +881,8 @@ class LocalMemoryLayer:
                 "x": r[5] if r[5] is not None else 100,
                 "y": r[6] if r[6] is not None else 100,
                 "sort_order": r[7] if r[7] is not None else 0,
-                "created_at": r[8]
+                "created_at": r[8],
+                "leitner_box": r[9] if (len(r) > 9 and r[9] is not None) else (r[7] if r[7] is not None and 1 <= r[7] <= 5 else 1)
             })
         return concepts
 
@@ -948,9 +953,9 @@ class LocalMemoryLayer:
         self.conn.commit()
 
     def grade_concept_card(self, concept_id: int, grade: str) -> int:
-        """Update flashcard sort_order (Leitner Box level 1-5) based on user recall grade."""
+        """Update flashcard leitner_box level (1-5) based on user recall grade."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT sort_order FROM concepts WHERE id = ?", (concept_id,))
+        cursor.execute("SELECT leitner_box FROM concepts WHERE id = ?", (concept_id,))
         row = cursor.fetchone()
         current_box = row[0] if row else 1
         if not current_box or current_box < 1:
@@ -963,9 +968,15 @@ class LocalMemoryLayer:
         else:  # good
             new_box = current_box
 
-        cursor.execute("UPDATE concepts SET sort_order = ? WHERE id = ?", (new_box, concept_id))
+        cursor.execute("UPDATE concepts SET leitner_box = ? WHERE id = ?", (new_box, concept_id))
         self.conn.commit()
         return new_box
+
+    def reset_concepts_progress(self, notebook_id: int):
+        """Reset leitner_box to 1 for all concept cards in a notebook."""
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE concepts SET leitner_box = 1 WHERE notebook_id = ?", (notebook_id,))
+        self.conn.commit()
 
     def close(self) -> None:
         if self.conn:

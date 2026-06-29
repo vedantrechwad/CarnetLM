@@ -1780,25 +1780,29 @@ async def generate_concept_from_prompt(request: ConceptGenerateRequest):
         context = "\n".join([r["content"] for r in search_results])
         sources = list(set([r["source_file"] for r in search_results if r.get("source_file")]))
 
-        llm_prompt = f"""You are an elite academic tutor. Your goal is to write a high-quality active recall study flashcard (front/back pair) for the topic/question: "{prompt_text}"
+        llm_prompt = f"""You are an elite academic tutor. Your goal is to write an exceptionally high-quality active recall study flashcard (front/back pair) for the topic/question: "{prompt_text}"
 
-Grounding Source Material Context:
+Grounding Source Material Context (from user's notebook):
 {context[:4000]}
 
 Instructions:
-1. FRONT (title): Write a precise, clear question or key term (1-6 words) to place on the FRONT of the card (e.g. "What is neuroplasticity?" or "The role of myelin").
-2. BACK (explanation): Write a highly accurate, rigorous answer or definition (1-3 sentences) to place on the BACK of the card. Incorporate specific facts or mechanisms from the context if available.
-3. Fallback: If context is sparse or topic is off-topic, utilize your general academic knowledge to formulate an accurate and informative Q&A card.
+1. Grounding Assessment: First, analyze the grounding source context. Determine if this topic/question is answered or discussed in the source material.
+   - If YES: Set "found_in_sources": true. Base the explanation strictly on the facts, mechanisms, and details in the sources.
+   - If NO (sparse/unrelated/off-topic): Set "found_in_sources": false. Write the explanation using your own extensive general academic knowledge, starting the explanation with a brief "[General Knowledge]" label.
 
-Format your response EXACTLY as a raw JSON object with keys "title" and "explanation":
+2. FRONT (title): Write a precise, clear question or key term (1-8 words) for the front (e.g. "How does action potential propagate?" or "The definition of myelin").
+3. BACK (explanation): Write a highly accurate, rigorous, and beautifully clear explanation (2-4 sentences). Make it concrete, easy to understand, and packed with high-quality educational value. Avoid generic descriptions.
+
+Format your response EXACTLY as a raw JSON object:
 {{
-  "title": "Front content",
-  "explanation": "Back content"
+  "title": "Front content question/term",
+  "explanation": "Back content explanation",
+  "found_in_sources": true
 }}"""
 
         res = _llm_router.generate(
             prompt=llm_prompt,
-            system_prompt="You are a JSON-only response writer. Output only raw JSON object with no quotes or markdown.",
+            system_prompt="You are a JSON-only response writer. Output only a raw JSON object with no quotes, markdown, or commentary.",
             temperature=0.3
         )
         raw_json = res.content.strip()
@@ -1810,6 +1814,11 @@ Format your response EXACTLY as a raw JSON object with keys "title" and "explana
         data = json.loads(raw_json)
         title = data.get("title", "Core Concept").strip()
         explanation = data.get("explanation", "").strip()
+        found_in_sources = data.get("found_in_sources", False)
+
+        # Clear linked sources if not found in context
+        if not found_in_sources or not context.strip():
+            sources = []
 
         if not explanation:
             explanation = f"Concept relating to: {prompt_text}"
@@ -1957,13 +1966,15 @@ async def save_concept(request: ConceptSaveRequest):
         )
         return {"status": "updated", "success": updated}
     else:
+        _memory.shift_concepts_order(request.notebook_id)
         new_id = _memory.create_concept(
             notebook_id=request.notebook_id,
             title=request.title,
             explanation=request.explanation,
             links_json=links_json,
             x=request.x or 100,
-            y=request.y or 100
+            y=request.y or 100,
+            sort_order=0
         )
         return {"status": "created", "id": new_id}
 
@@ -2010,6 +2021,18 @@ async def delete_concept(concept_id: int):
 
     deleted = _memory.delete_concept(concept_id)
     return {"status": "deleted", "success": deleted}
+
+@app.post("/api/notebooks/{notebook_id}/concepts/reset-progress")
+async def reset_concepts_progress(notebook_id: int):
+    """Reset all flashcard boxes in a notebook to 1."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    try:
+        _memory.reset_concepts_progress(notebook_id)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to reset flashcard progress: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Static Frontend ───────────────────────────────────────────────────────────

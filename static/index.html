@@ -538,7 +538,7 @@
 <!-- App Logic (original, unmodified) -->
 <script>
 const API = '';
-let activeNotebookId = null, notebooks = [], sources = [], chatHistory = [], notes = [], currentNoteId = null, isLoading = false, quill = null, currentSpeech = null, currentAudio = null, ttsAvailable = false, discoverEnabled = false, discoverCandidates = [];
+let activeNotebookId = localStorage.getItem('active_notebook_id') ? parseInt(localStorage.getItem('active_notebook_id')) : null, notebooks = [], sources = [], chatHistory = [], notes = [], currentNoteId = null, isLoading = false, quill = null, currentSpeech = null, currentAudio = null, ttsAvailable = false, discoverEnabled = false, discoverCandidates = [];
 let followupContext = '', selectedChatText = '', grammarTimer = null, currentSourceId = null, currentSourceData = null, docSaveTimer = null, highlightChunkIndex = null;
 let performanceMode = 'fast', activeIngestJobs = [], healthPollTimer = null, ingestPollTimer = null;
 let selectedChatImageBase64 = null;
@@ -916,6 +916,7 @@ async function loadNotebooks() {
         notebooks = data.notebooks || [];
         if (activeNotebookId && !notebooks.some(nb => nb.id === activeNotebookId)) activeNotebookId = null;
         if (!activeNotebookId && notebooks.length) activeNotebookId = notebooks[0].id;
+        if (activeNotebookId) localStorage.setItem('active_notebook_id', activeNotebookId);
         renderNotebooks();
         
         if (activeNotebookId) {
@@ -1026,6 +1027,7 @@ async function switchNotebook(id) {
         }
     }
     activeNotebookId = id;
+    localStorage.setItem('active_notebook_id', id);
     renderNotebooks();
     await Promise.all([loadSources(), loadHistory(), loadNotes(), loadDocument(), updateDiscoverButton(), loadStudyGuide()]);
     closeNoteEditor();
@@ -1098,7 +1100,10 @@ async function deleteNotebook(id) {
 
     const r = await fetch(url, { method: 'DELETE' });
     if (r.ok) {
-        if (activeNotebookId === id) activeNotebookId = null;
+        if (activeNotebookId === id) {
+            activeNotebookId = null;
+            localStorage.removeItem('active_notebook_id');
+        }
         sessionStorage.removeItem(`notebook_pwd_${id}`);
         await loadNotebooks();
     } else {
@@ -2364,7 +2369,7 @@ function renderConceptBoard() {
                     <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fcd34d;padding:0.4rem 1.25rem;border-radius:6px;">Good</button>
                     <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:0.4rem 1.25rem;border-radius:6px;">Easy</button>
                 </div>
-                <div style="font-size:0.7rem;opacity:0.4;margin-top:0.25rem;">Leitner Box level: ${card.sort_order || 1} / 5</div>
+                <div style="font-size:0.7rem;opacity:0.4;margin-top:0.25rem;">Leitner Box level: ${card.leitner_box || 1} / 5</div>
             </div>
 
             <!-- Navigation Controls -->
@@ -2375,8 +2380,13 @@ function renderConceptBoard() {
             </div>
         `;
     } else {
-        // Render static list deck editor with View and Edit modes
-        let html = '<div class="concept-grid">';
+        // Render static list deck editor with View and Edit modes in a two-column layout
+        let html = `
+            <div class="deck-manage-layout" style="display:flex; width:100%; height:100%; gap:1.5rem; padding:1.5rem; overflow-y:auto; box-sizing:border-box;">
+                <div style="flex:1; min-width:0;">
+                    <div class="concept-grid" style="display:grid !important; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; gap:1.25rem !important; padding:0; background:none; min-height:auto; width:100%;">
+        `;
+        
         currentConcepts.forEach(c => {
             const isEditing = (c.id === editingConceptId);
             
@@ -2399,7 +2409,7 @@ function renderConceptBoard() {
 
             if (isEditing) {
                 html += `
-                    <div class="concept-card editing" data-id="${c.id}" style="border-color: var(--primary); height: auto; min-height: 250px;">
+                    <div class="concept-card editing" data-id="${c.id}" style="border-color: var(--primary); height: auto; min-height: 250px; width: 100% !important; max-width: 100% !important;">
                         <div class="concept-card-header">
                             <input type="text" class="concept-title-input" id="edit-title-${c.id}" value="${escapeHtml(c.title)}" placeholder="Card Question/Term" style="border-bottom: 1px solid var(--primary); background: rgba(255,255,255,0.03); padding: 0.25rem 0.5rem; border-radius: 4px;" />
                             <button class="concept-delete-btn" onclick="deleteConceptCard(${c.id})">&times;</button>
@@ -2419,8 +2429,8 @@ function renderConceptBoard() {
                 `;
             } else {
                 html += `
-                    <div class="concept-card" data-id="${c.id}">
-                        <div class="concept-card-header">
+                    <div class="concept-card" data-id="${c.id}" style="cursor: grab; width: 100% !important; max-width: 100% !important;">
+                        <div class="concept-card-header" style="cursor: grab;">
                             <div class="concept-card-view-title" style="font-weight:700;font-size:0.95rem;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</div>
                             <button class="concept-delete-btn" onclick="deleteConceptCard(${c.id})">&times;</button>
                         </div>
@@ -2438,8 +2448,74 @@ function renderConceptBoard() {
                 `;
             }
         });
-        html += '</div>';
+        
+        // Add statistics panel
+        const counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+        currentConcepts.forEach(c => {
+            let box = c.leitner_box || 1;
+            if (box < 1) box = 1;
+            if (box > 5) box = 5;
+            counts[box]++;
+        });
+        
+        const colors = { 1: '#ffb4ab', 2: '#ffb77d', 3: '#ffd084', 4: '#c3c7cd', 5: '#88ddcc' };
+        const labels = {
+            1: 'Box 1: New / Hard',
+            2: 'Box 2: Learning',
+            3: 'Box 3: Familiar',
+            4: 'Box 4: Proficient',
+            5: 'Box 5: Mastered'
+        };
+        
+        let statsHtml = [1, 2, 3, 4, 5].map(box => {
+            const count = counts[box];
+            const pct = currentConcepts.length ? (count / currentConcepts.length) * 100 : 0;
+            return `
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-secondary);">
+                        <span>${labels[box]}</span>
+                        <span style="font-weight:700; color:${colors[box]};">${count}</span>
+                    </div>
+                    <div style="width:100%; height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
+                        <div style="width:${pct}%; height:100%; background:${colors[box]}; border-radius:3px; transition:width 0.3s ease;"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        html += `
+                    </div>
+                </div>
+                
+                <!-- Deck Insights Sidebar -->
+                <div class="deck-stats-panel" style="width:300px; display:flex; flex-direction:column; gap:1.25rem; background:var(--surface-container-low); border:1px solid var(--border-subtle); border-radius:12px; padding:1.25rem; height:fit-content; position:sticky; top:0;">
+                    <div style="font-weight:700; font-size:0.875rem; color:var(--text-primary); letter-spacing:0.02em; display:flex; align-items:center; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:0.25rem;">
+                        <span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">analytics</span>
+                        Deck Insights
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-secondary); border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 0.5rem;">
+                        <span>Total Cards</span>
+                        <span style="font-weight:700; color:var(--primary);">${currentConcepts.length}</span>
+                    </div>
+                    
+                    <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                        <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">Leitner Box Distribution</div>
+                        ${statsHtml}
+                    </div>
+                    
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                        <button class="btn btn-sm btn-primary" onclick="setFlashcardView('study')" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">play_arrow</span> Study Now
+                        </button>
+                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(255,180,171,0.2);">
+                            <span class="material-symbols-outlined" style="font-size:14px">restart_alt</span> Reset Progress
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
         manageView.innerHTML = html;
+        setupCardDragAndDrop();
     }
 }
 
@@ -2598,6 +2674,94 @@ async function saveEditingCard(id) {
     editingConceptId = null;
     renderConceptBoard();
     showToast("Card updated", "info");
+}
+
+let draggedCardId = null;
+
+function setupCardDragAndDrop() {
+    const grid = document.querySelector('.concept-grid');
+    if (!grid) return;
+    
+    const cards = grid.querySelectorAll('.concept-card:not(.editing)');
+    
+    cards.forEach(card => {
+        card.setAttribute('draggable', 'true');
+        
+        card.addEventListener('dragstart', (e) => {
+            draggedCardId = parseInt(card.getAttribute('data-id'));
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => card.style.opacity = '0.4', 0);
+        });
+        
+        card.addEventListener('dragend', async () => {
+            card.classList.remove('dragging');
+            card.style.opacity = '1';
+            
+            const newOrder = Array.from(grid.querySelectorAll('.concept-card')).map(el => parseInt(el.getAttribute('data-id')));
+            currentConcepts.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+            
+            try {
+                await fetch(`${API}/api/concepts/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        notebook_id: activeNotebookId,
+                        concept_ids: newOrder
+                    })
+                });
+            } catch (err) {
+                console.error("Failed to save reordered cards:", err);
+            }
+            
+            draggedCardId = null;
+        });
+        
+        card.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+        
+        card.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            if (draggedCardId === null) return;
+            const targetId = parseInt(card.getAttribute('data-id'));
+            if (draggedCardId === targetId) return;
+            
+            const draggingEl = grid.querySelector(`.concept-card[data-id="${draggedCardId}"]`);
+            if (!draggingEl) return;
+            
+            const allCards = Array.from(grid.querySelectorAll('.concept-card'));
+            const draggingIndex = allCards.indexOf(draggingEl);
+            const targetIndex = allCards.indexOf(card);
+            
+            if (draggingIndex < targetIndex) {
+                grid.insertBefore(draggingEl, card.nextSibling);
+            } else {
+                grid.insertBefore(draggingEl, card);
+            }
+        });
+    });
+}
+
+async function resetLeitnerProgress() {
+    if (!activeNotebookId) return;
+    if (!await customConfirm('Are you sure you want to reset all Leitner study progress for this deck? All cards will go back to Box 1.')) return;
+    
+    try {
+        const r = await fetch(`${API}/api/notebooks/${activeNotebookId}/concepts/reset-progress`, {
+            method: 'POST'
+        });
+        if (r.ok) {
+            showToast('Leitner progress reset successfully', 'info');
+            await loadKnowledgeGraph();
+        } else {
+            showToast('Failed to reset progress', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Error resetting progress', 'error');
+    }
 }
 
 </script>
