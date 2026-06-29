@@ -3,301 +3,306 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DocChat — Smart Document Workspace</title>
-    <meta name="description" content="Multi-notebook document Q&A with notes, rich editing, and AI writing assist.">
+    <title>CarnetLM — Local AI Notebook</title>
+    <meta name="description" content="Offline-first local AI notebook. Multi-notebook Q&A with notes, rich editing, and AI writing assist.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            /* Matte black theme inspired by NotebookLM */
-            --bg-primary: #1b1b1b; --bg-secondary: #232323; --bg-card: #2a2a2a;
-            --bg-card-hover: #333333; --bg-input: #1e1e1e;
-            --border: #3a3a3a; --border-hover: #4a4a4a;
-            --text-primary: #e3e3e3; --text-secondary: #a0a0a0; --text-muted: #727272;
-            --accent: #8ab4f8; --accent-hover: #6ea1f0; --accent-glow: rgba(138,180,248,0.1);
-            --accent-green: #81c995; --accent-blue: #8ab4f8; --accent-orange: #fcad70; --accent-red: #f28b82;
-            --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
-            --shadow: 0 2px 12px rgba(0,0,0,0.4); --sidebar-w: 260px;
-        }
-        html, body { height: 100%; font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary); color: var(--text-primary); overflow: hidden; }
-        button { font-family: inherit; cursor: pointer; }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; } ::-webkit-scrollbar-track { background: transparent; }
-
-        /* ─── Layout ───────────────────────── */
-        .app { display: flex; height: 100vh; }
-        .sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--bg-secondary); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-primary); }
-
-        /* ─── Sidebar ──────────────────────── */
-        .sidebar-header { padding: 1.25rem 1rem; border-bottom: 1px solid var(--border); }
-        .logo { font-size: 1.125rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
-        .logo span { color: var(--accent); }
-        .sidebar-section { padding: 0.75rem 0.75rem 0.25rem; }
-        .sidebar-section-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 0.5rem; padding: 0 0.5rem; display: flex; align-items: center; justify-content: space-between; }
-        .sidebar-list { flex: 1; overflow-y: auto; padding: 0 0.75rem; }
-
-        .nb-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; font-size: 0.8125rem; color: var(--text-secondary); border: 1px solid transparent; }
-        .nb-item:hover { background: var(--bg-card); color: var(--text-primary); }
-        .nb-item.active { background: var(--bg-card); color: var(--accent); border-color: rgba(138,180,248,0.15); }
-        .nb-item .nb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .nb-item .nb-badge { font-size: 0.625rem; background: var(--bg-card); padding: 1px 5px; border-radius: 6px; color: var(--text-muted); }
-        .nb-item .nb-delete { display: none; background: none; border: none; color: var(--accent-red); font-size: 0.75rem; padding: 2px; }
-        .nb-item:hover .nb-delete { display: block; }
-        .nb-item:hover .nb-badge { display: none; }
-
-        .src-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.75rem; color: var(--text-muted); }
-        .src-item:hover { background: var(--bg-card); }
-        .src-icon { width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 0.6875rem; flex-shrink: 0; }
-        .src-icon-doc { background: rgba(138,180,248,0.1); } .src-icon-web { background: rgba(129,201,149,0.1); } .src-icon-yt { background: rgba(242,139,130,0.1); }
-        .src-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .src-del { display: none; background: none; border: none; color: var(--accent-red); font-size: 0.625rem; cursor: pointer; }
-        .src-item:hover .src-del { display: block; }
-
-        .sidebar-add { display: flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.5rem; border-radius: 6px; border: 1px dashed var(--border); background: none; color: var(--text-muted); font-size: 0.75rem; width: 100%; transition: all 0.15s; margin-top: 0.25rem; }
-        .sidebar-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
-
-        .model-section { padding: 0.75rem; border-top: 1px solid var(--border); margin-top: auto; }
-        .model-select { width: 100%; padding: 0.4rem 0.5rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.75rem; font-family: inherit; outline: none; }
-        .model-select:focus { border-color: var(--accent); }
-        .model-label { font-size: 0.625rem; color: var(--text-muted); margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-        .model-status { font-size: 0.625rem; margin-top: 0.25rem; }
-        .model-status.online { color: var(--accent-green); } .model-status.offline { color: var(--accent-red); }
-
-        /* ─── Main ─────────────────────────── */
-        .main-header { display: flex; align-items: center; border-bottom: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
-        .tab { padding: 0.875rem 1.25rem; font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); background: none; border: none; border-bottom: 2px solid transparent; transition: all 0.2s; }
-        .tab:hover { color: var(--text-secondary); } .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-        .tab-badge { font-size: 0.5625rem; background: var(--accent-glow); color: var(--accent); padding: 1px 5px; border-radius: 6px; margin-left: 0.375rem; }
-        .main-content { flex: 1; overflow: hidden; position: relative; }
-        .tab-panel { display: none; height: 100%; flex-direction: column; } .tab-panel.active { display: flex; }
-
-        /* ─── Chat ─────────────────────────── */
-        .chat-messages { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: var(--text-muted); }
-        .chat-empty-icon { font-size: 2.5rem; opacity: 0.3; }
-        .chat-empty h3 { font-size: 1rem; font-weight: 600; color: var(--text-secondary); }
-        .chat-empty p { font-size: 0.8125rem; max-width: 340px; text-align: center; line-height: 1.5; }
-
-        .msg { max-width: 80%; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        .msg-user { align-self: flex-end; } .msg-assistant { align-self: flex-start; }
-        .msg-bubble { padding: 0.875rem 1.125rem; border-radius: var(--radius-lg); line-height: 1.6; font-size: 0.8125rem; position: relative; }
-        .msg-user .msg-bubble { background: #3c4043; color: var(--text-primary); border-bottom-right-radius: 4px; }
-        .msg-assistant .msg-bubble { background: var(--bg-card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-        .msg-bubble p { margin-bottom: 0.5rem; } .msg-bubble p:last-child { margin-bottom: 0; }
-        .msg-bubble ul, .msg-bubble ol { padding-left: 1.25rem; margin-bottom: 0.5rem; }
-        .msg-bubble strong { font-weight: 600; }
-        .msg-bubble code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px; font-size: 0.75rem; }
-
-        /* Citation badges */
-        .citation-ref { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #1b1b1b; font-size: 0.5625rem; font-weight: 700; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 3px; vertical-align: middle; margin: 0 1px; cursor: pointer; }
-        /* Global floating citation tooltip */
-        #citationTooltip { display: none; position: fixed; background: var(--bg-secondary); border: 1px solid var(--border); padding: 0.75rem 0.875rem; border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-secondary); width: 340px; max-height: 200px; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 1000; line-height: 1.5; pointer-events: none; }
-        #citationTooltip.visible { display: block; }
-        #citationTooltip .ct-header { font-weight: 600; color: var(--accent); margin-bottom: 0.375rem; font-size: 0.6875rem; }
-        #citationTooltip .ct-text { color: var(--text-secondary); }
-
-        /* Message actions */
-        .msg-actions { display: flex; gap: 0.25rem; margin-top: 0.5rem; opacity: 0; transition: opacity 0.15s; }
-        .msg:hover .msg-actions { opacity: 1; }
-        .msg-action-btn { background: var(--bg-card-hover); border: 1px solid var(--border); color: var(--text-muted); font-size: 0.6875rem; padding: 3px 8px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 3px; transition: all 0.15s; }
-        .msg-action-btn:hover { color: var(--accent); border-color: var(--accent); }
-        .msg-action-btn.speaking { color: var(--accent-green); border-color: var(--accent-green); }
-
-        .msg-sources { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
-        .msg-source-tag { font-size: 0.625rem; padding: 2px 6px; border-radius: 5px; background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(138,180,248,0.15); }
-
-        /* Text selection popup in chat */
-        .selection-popup { display: none; position: fixed; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.25rem; box-shadow: var(--shadow); z-index: 300; }
-        .selection-popup.active { display: flex; gap: 0.25rem; }
-        .sel-btn { background: none; border: none; color: var(--text-secondary); font-size: 0.6875rem; padding: 0.375rem 0.625rem; border-radius: 5px; cursor: pointer; white-space: nowrap; transition: all 0.1s; }
-        .sel-btn:hover { background: var(--accent-glow); color: var(--accent); }
-
-        /* Follow-up context bar (like ChatGPT quote) */
-        .followup-bar { display: none; padding: 0.5rem 1rem; margin-bottom: 0.375rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-secondary); line-height: 1.4; position: relative; max-height: 60px; overflow: hidden; }
-        .followup-bar.active { display: block; }
-        .followup-bar .followup-close { position: absolute; top: 4px; right: 6px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.875rem; }
-        .followup-bar .followup-label { font-size: 0.625rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
-
-        .msg-loading { align-self: flex-start; display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.8125rem; padding: 0.75rem; }
-        .loading-dots span { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite ease-in-out both; }
-        .loading-dots span:nth-child(1) { animation-delay: -0.32s; } .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-
-        .chat-input-area { padding: 0.75rem 2rem 1.25rem; flex-shrink: 0; }
-        .chat-input-wrapper { display: flex; align-items: center; gap: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 1.5rem; padding: 0.375rem 0.375rem 0.375rem 1.25rem; transition: border-color 0.2s; }
-        .chat-input-wrapper:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
-        .chat-input { flex: 1; background: none; border: none; color: var(--text-primary); font-size: 0.8125rem; font-family: inherit; outline: none; }
-        .chat-input::placeholder { color: var(--text-muted); }
-        .send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); border: none; color: #1b1b1b; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; font-weight: 700; }
-        .send-btn:hover { background: var(--accent-hover); transform: scale(1.05); }
-        .send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
-
-        /* ─── Notes ────────────────────────── */
-        .notes-toolbar { display: flex; gap: 0.5rem; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
-        .notes-list { flex: 1; overflow-y: auto; padding: 1rem 2rem; display: flex; flex-direction: column; gap: 0.75rem; }
-        .note-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; cursor: pointer; transition: all 0.15s; }
-        .note-card:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
-        .note-card-title { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.375rem; }
-        .note-card-preview { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-        .note-card-meta { font-size: 0.625rem; color: var(--text-muted); margin-top: 0.5rem; }
-
-        .note-editor { display: none; flex: 1; flex-direction: column; }
-        .note-editor.active { display: flex; }
-        .note-editor-header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
-        .note-title-input { flex: 1; background: none; border: none; color: var(--text-primary); font-size: 1rem; font-weight: 600; font-family: inherit; outline: none; }
-        .note-content-area { flex: 1; padding: 1.5rem 2rem; overflow-y: auto; }
-        .note-textarea { width: 100%; height: 100%; background: none; border: none; color: var(--text-primary); font-size: 0.875rem; font-family: inherit; line-height: 1.7; outline: none; resize: none; }
-        .note-highlight { background: rgba(138,180,248,0.15); }
-
-        /* ─── Editor ───────────────────────── */
-        .editor-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .editor-toolbar-custom { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .editor-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-        .editor-container .ql-toolbar { background: var(--bg-card); border-color: var(--border) !important; flex-shrink: 0; }
-        .editor-container .ql-toolbar .ql-stroke { stroke: var(--text-secondary) !important; }
-        .editor-container .ql-toolbar .ql-fill { fill: var(--text-secondary) !important; }
-        .editor-container .ql-toolbar .ql-picker-label { color: var(--text-secondary) !important; }
-        .editor-container .ql-toolbar button:hover .ql-stroke, .editor-container .ql-toolbar button.ql-active .ql-stroke { stroke: var(--accent) !important; }
-        .editor-container .ql-toolbar button:hover .ql-fill, .editor-container .ql-toolbar button.ql-active .ql-fill { fill: var(--accent) !important; }
-        .editor-container .ql-container { border-color: var(--border) !important; background: var(--bg-primary); font-family: 'Inter', sans-serif; font-size: 0.9375rem; flex: 1; overflow-y: auto; }
-        .editor-container .ql-editor { color: var(--text-primary); min-height: 400px; line-height: 1.8; padding: 2rem; }
-        .editor-container .ql-editor.ql-blank::before { color: var(--text-muted); font-style: normal; }
-        .editor-container .ql-snow .ql-picker-options { background: var(--bg-card) !important; border-color: var(--border) !important; }
-        .editor-container .ql-snow .ql-picker-item { color: var(--text-secondary) !important; }
-        .editor-container .ql-snow .ql-picker-item:hover { color: var(--accent) !important; }
-
-        /* AI Panel */
-        .ai-panel { display: none; position: fixed; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; box-shadow: var(--shadow); z-index: 500; min-width: 280px; max-width: 400px; }
-        .ai-panel.active { display: block; }
-        .ai-panel-actions { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-        .ai-btn { background: var(--bg-card-hover); border: 1px solid var(--border); color: var(--text-secondary); font-size: 0.6875rem; padding: 4px 8px; border-radius: 5px; cursor: pointer; transition: all 0.15s; }
-        .ai-btn:hover { color: var(--accent); border-color: var(--accent); }
-        .ai-grammar-status { font-size: 0.6875rem; padding: 3px 8px; border-radius: 5px; display: none; align-items: center; gap: 4px; }
-        .ai-grammar-status.checking { display: flex; color: var(--text-muted); }
-        .ai-grammar-status.good { display: flex; color: var(--accent-green); background: rgba(129,201,149,0.1); }
-        .ai-grammar-status.bad { display: flex; color: var(--accent-orange); background: rgba(252,173,112,0.1); cursor: pointer; }
-        .grammar-suggestion { display: none; font-size: 0.75rem; line-height: 1.5; padding: 0.5rem; background: var(--bg-input); border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid var(--accent-orange); }
-        .grammar-suggestion.active { display: block; }
-        .grammar-suggestion .gs-label { font-size: 0.625rem; color: var(--accent-orange); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 0.25rem; }
-        .grammar-suggestion .gs-text { color: var(--text-primary); }
-        .grammar-suggestion .gs-actions { display: flex; gap: 0.25rem; margin-top: 0.375rem; justify-content: flex-end; }
-        .ai-result { font-size: 0.8125rem; line-height: 1.6; color: var(--text-primary); max-height: 200px; overflow-y: auto; padding: 0.5rem; background: var(--bg-input); border-radius: 6px; margin-bottom: 0.5rem; }
-        .ai-result-actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
-
-        /* ─── Shared ───────────────────────── */
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0.5rem 0.875rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.15s; font-family: inherit; }
-        .btn:hover { background: var(--bg-card-hover); border-color: var(--border-hover); }
-        .btn-primary { background: var(--accent); border-color: var(--accent); color: #1b1b1b; font-weight: 600; }
-        .btn-primary:hover { background: var(--accent-hover); }
-        .btn-sm { padding: 0.3rem 0.625rem; font-size: 0.6875rem; }
-        .btn-danger { color: var(--accent-red); border-color: rgba(242,139,130,0.3); }
-        .btn-danger:hover { background: rgba(242,139,130,0.1); }
-
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center; }
-        .modal-overlay.active { display: flex; }
-        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.75rem; width: 90%; max-width: 440px; box-shadow: var(--shadow); animation: fadeIn 0.2s ease; }
-        .modal h3 { font-size: 0.9375rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
-        .modal-close { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.125rem; }
-        .input { width: 100%; padding: 0.625rem 0.875rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 0.8125rem; font-family: inherit; outline: none; transition: border-color 0.2s; }
-        .input:focus { border-color: var(--accent); }
-        .input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
-        .input-label { font-size: 0.75rem; color: var(--text-secondary); font-weight: 500; }
-        .file-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 1.5rem; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--text-muted); font-size: 0.75rem; }
-        .file-drop:hover, .file-drop.dragover { border-color: var(--accent); background: var(--accent-glow); }
-        .file-drop input { display: none; }
-        .status-msg { font-size: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-sm); margin-top: 0.5rem; }
-        .status-success { background: rgba(129,201,149,0.1); color: var(--accent-green); border: 1px solid rgba(129,201,149,0.2); }
-        .status-error { background: rgba(242,139,130,0.1); color: var(--accent-red); border: 1px solid rgba(242,139,130,0.2); }
-        .status-loading { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(138,180,248,0.15); }
-
-        .note-selector { position: fixed; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem; box-shadow: var(--shadow); z-index: 200; min-width: 220px; max-height: 240px; overflow-y: auto; display: none; }
-        .note-selector.active { display: block; }
-        .note-selector-item { padding: 0.375rem 0.625rem; border-radius: 5px; font-size: 0.75rem; cursor: pointer; color: var(--text-secondary); }
-        .note-selector-item:hover { background: var(--accent-glow); color: var(--accent); }
-        .note-selector-new { color: var(--accent); border-top: 1px solid var(--border); margin-top: 0.25rem; padding-top: 0.5rem; }
-    </style>
+    <link rel="stylesheet" href="/static/theme.css?v=6.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="/static/icons.js?v=7.0"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script>
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
 </head>
 <body>
+
+<!-- ═══ Animated Blob Background ═══ -->
+<div class="blob-container" id="blobContainer"></div>
+<div class="noise-overlay"></div>
+
+<!-- Scanline overlay -->
+<div class="scanlines"></div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Connecting to backend...</div>
+    </div>
+</div>
+
 <div class="app">
-    <div class="sidebar">
-        <div class="sidebar-header"><span class="logo">Doc<span>Chat</span></span></div>
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">Notebooks <button class="sidebar-add" style="width:auto;margin:0;padding:2px 6px;border:none;" onclick="createNotebook()" title="New Notebook">+</button></div>
+    <!-- ═══ Sidebar ═══ -->
+    <!-- ═══ Left Sidebar ═══ -->
+    <div class="sidebar sidebar-left">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="material-symbols-outlined logo-icon" style="font-size:20px;font-variation-settings:'FILL' 1">auto_stories</span>
+                CarnetLM
+            </div>
+            <div class="logo-sub">AI Research Engine</div>
         </div>
-        <div class="sidebar-list" id="notebookList"></div>
-        <div class="sidebar-section" style="margin-top:0.5rem;">
-            <div class="sidebar-section-title">Sources <span id="sourceCount" style="font-weight:400">0</span></div>
+        <div class="sidebar-content custom-scrollbar">
+            <!-- Sidebar Actions Section -->
+            <div class="sidebar-actions-group" id="sidebarActions" style="display:none;">
+                <div class="sidebar-group-title">Add Sources</div>
+                <div class="sources-grid">
+                    <button class="source-grid-btn" onclick="openModal('upload')">
+                        <span class="material-symbols-outlined">upload_file</span>
+                        <span>File</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('url')">
+                        <span class="material-symbols-outlined">link</span>
+                        <span>URL</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('youtube')">
+                        <span class="material-symbols-outlined">smart_display</span>
+                        <span>YouTube</span>
+                    </button>
+                    <button class="source-grid-btn" onclick="openModal('clipboard')">
+                        <span class="material-symbols-outlined">content_paste</span>
+                        <span>Paste</span>
+                    </button>
+                </div>
+
+                <div class="sidebar-group-title" style="margin-top: 1.25rem;">Research Tools</div>
+                <div class="tools-list">
+                    <button class="tool-list-btn" onclick="openModal('search')">
+                        <span class="material-symbols-outlined">search</span>
+                        <span>Semantic Search</span>
+                    </button>
+                    <button class="tool-list-btn" onclick="runSummary()">
+                        <span class="material-symbols-outlined">auto_awesome</span>
+                        <span>Study Guide</span>
+                    </button>
+                    <button class="tool-list-btn" onclick="openModal('compare')">
+                        <span class="material-symbols-outlined">compare_arrows</span>
+                        <span>Compare Sources</span>
+                    </button>
+                    <button class="tool-list-btn" id="discoverBtn" style="display:none" onclick="openDiscoverModal()">
+                        <span class="material-symbols-outlined">language</span>
+                        <span>Web Discover</span>
+                    </button>
+                </div>
+            </div>
         </div>
-        <div style="padding:0 0.75rem; overflow-y:auto; max-height:180px;" id="sourceList"></div>
-        <div style="padding:0.25rem 0.75rem; display:flex; gap:0.25rem;">
-            <button class="sidebar-add" onclick="openModal('upload')">📄 File</button>
-            <button class="sidebar-add" onclick="openModal('url')">🌐 URL</button>
-            <button class="sidebar-add" onclick="openModal('youtube')">🎥 YT</button>
-        </div>
-        <div class="model-section">
-            <div class="model-label">🤖 AI Model</div>
-            <select class="model-select" id="modelSelect" onchange="selectModel(this.value)"><option>Loading...</option></select>
-            <div class="model-status" id="modelStatus"></div>
+
+        <div class="sidebar-footer">
+            <div class="settings-btn-wrap">
+                <button class="sidebar-add" style="width:100%" onclick="openSettings()"><span class="material-symbols-outlined" style="font-size:16px">settings</span> Settings</button>
+            </div>
+            <div class="model-section">
+                <div class="model-label">AI model</div>
+                <select class="model-select" id="modelSelect" onchange="selectModel(this.value)"><option>Loading...</option></select>
+                <div class="model-status" id="modelStatus"><span class="conn-dot"></span><span id="modelStatusText">Checking...</span></div>
+            </div>
         </div>
     </div>
 
+    <!-- ═══ Main ═══ -->
     <div class="main">
+        <!-- Header Tabs -->
         <div class="main-header">
-            <button class="tab active" data-tab="chat" onclick="switchTab('chat')">💬 Chat</button>
-            <button class="tab" data-tab="notes" onclick="switchTab('notes')">📝 Notes <span class="tab-badge" id="notesBadge">0</span></button>
-            <button class="tab" data-tab="editor" onclick="switchTab('editor')">✍️ Editor</button>
+            <button class="tab" onclick="toggleSidebar('left')" title="Toggle Left Sidebar" style="background:none;border:none;margin-right:1rem;padding:0.45rem;display:inline-flex;align-items:center;justify-content:center;">
+                <span class="material-symbols-outlined" id="leftSidebarIcon" style="font-size:18px">menu_open</span>
+            </button>
+            <div class="tab-container">
+                <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
+                <button class="tab" data-tab="guide" onclick="switchTab('guide')">Study Guide</button>
+                <button class="tab" data-tab="graph" onclick="switchTab('graph')">Flashcards</button>
+                <button class="tab" data-tab="notes" onclick="switchTab('notes')">Notes <span class="tab-badge" id="notesBadge">0</span></button>
+                <button class="tab" data-tab="editor" onclick="switchTab('editor')">Editor</button>
+            </div>
+            <div style="flex:1"></div>
+            <button class="tab" onclick="toggleTheme()" title="Toggle Light/Dark Mode" style="background:none;border:none;display:inline-flex;align-items:center;justify-content:center;">
+                <span class="material-symbols-outlined" id="themeIcon" style="font-size:18px">light_mode</span>
+            </button>
+            <button class="tab" onclick="toggleSidebar('right')" title="Toggle Right Sidebar" style="background:none;border:none;margin-left:1rem;padding:0.45rem;display:inline-flex;align-items:center;justify-content:center;">
+                <span class="material-symbols-outlined" id="rightSidebarIcon" style="font-size:18px">dock_to_right</span>
+            </button>
         </div>
+
         <div class="main-content">
             <!-- Chat -->
             <div class="tab-panel active" id="panel-chat">
+                <div class="notes-toolbar" style="padding:0.5rem 1.25rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:0.5rem;">
+                    <button class="btn btn-sm btn-soft" onclick="exportChat('md')"><span class="material-symbols-outlined" style="font-size:14px">download</span> Export</button>
+                    <button class="btn btn-sm btn-ghost" onclick="clearChatHistory()"><span class="material-symbols-outlined" style="font-size:14px">delete</span> Clear</button>
+                </div>
+                <div id="onboardingWrap"></div>
                 <div class="chat-messages" id="chatMessages">
-                    <div class="chat-empty"><div class="chat-empty-icon">💬</div><h3>Ask anything about your documents</h3><p>Upload sources, then ask questions for cited answers.</p></div>
+                    <div class="chat-empty">
+                        <div class="chat-empty-icon"><span class="material-symbols-outlined logo-icon" style="font-size:36px;font-variation-settings:'FILL' 1">auto_stories</span></div>
+                        <h3>Ask anything about your documents</h3>
+                        <p>Upload sources, then query for cited answers from your local model.</p>
+                    </div>
                 </div>
                 <div class="chat-input-area">
                     <div class="followup-bar" id="followupBar">
-                        <div class="followup-label">Replying to</div>
+                        <div class="followup-label">↳ Context</div>
                         <span id="followupText"></span>
                         <button class="followup-close" onclick="clearFollowup()">&times;</button>
                     </div>
+                    
+                    <!-- Chat Image Preview Bar -->
+                    <div class="chat-image-preview-bar" id="chatImagePreviewBar" style="display:none; align-items:center; gap:0.5rem; padding:0.5rem 1.25rem; border-top:1px solid var(--border-subtle); background:rgba(255,255,255,0.02);">
+                        <div style="position:relative; width:45px; height:45px; border-radius:6px; overflow:hidden; border:1px solid var(--border-subtle);">
+                            <img id="chatImagePreviewImg" style="width:100%; height:100%; object-fit:cover;">
+                            <button type="button" onclick="clearChatImage()" style="position:absolute; top:2px; right:2px; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:16px; height:16px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1;">&times;</button>
+                        </div>
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-family:var(--font-mono);" id="chatImageName">image.png</span>
+                    </div>
+
+                    <input type="file" id="chatImageInput" accept="image/*" style="display:none;" onchange="handleChatImageSelect(event)">
+                    
                     <form class="chat-input-wrapper" onsubmit="sendMessage(event)">
-                        <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off">
-                        <button type="submit" class="send-btn" id="sendBtn">➤</button>
+                        <button type="button" onclick="document.getElementById('chatImageInput').click()" style="background:none; border:none; padding:0 0.5rem; display:inline-flex; align-items:center; justify-content:center; color:var(--outline); cursor:pointer;" title="Upload image for local OCR"><span class="material-symbols-outlined" style="font-size:20px">attach_file</span></button>
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Message CarnetLM..." autocomplete="off">
+                        <button type="submit" class="send-btn" id="sendBtn"><span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1">send</span></button>
                     </form>
                 </div>
             </div>
+
+            <!-- Study Guide -->
+            <div class="tab-panel" id="panel-guide">
+                <div class="guide-toolbar">
+                    <button class="btn btn-sm btn-soft" id="regenerateGuideBtn" onclick="generateStudyGuide(true)"><span class="material-symbols-outlined" style="font-size:14px">sync</span> Regenerate</button>
+                    <button class="btn btn-sm btn-ghost" id="exportGuideBtn" onclick="exportStudyGuide()"><span class="material-symbols-outlined" style="font-size:14px">download</span> Export</button>
+                </div>
+                
+                <div class="guide-body-container">
+                    <!-- Onboarding State -->
+                    <div class="guide-onboarding" id="guideOnboarding">
+                        <div class="guide-empty-icon"><span class="material-symbols-outlined logo-icon" style="font-size:42px;font-variation-settings:'FILL' 1">auto_awesome</span></div>
+                        <h3>Create a Study Guide</h3>
+                        <p>Generate a structured study guide complete with executive summaries, key concepts, figures, and interactive citations synthesized from all your uploaded sources.</p>
+                        <button class="btn btn-primary" onclick="generateStudyGuide(false)">Generate Guide</button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div class="guide-loading" id="guideLoading" style="display:none">
+                        <div class="guide-spinner"></div>
+                        <h4 id="guideLoadingText">Synthesizing sources...</h4>
+                        <p>This may take up to a minute depending on the amount of material.</p>
+                    </div>
+
+                    <!-- Content State -->
+                    <div class="guide-workspace" id="guideWorkspace" style="display:none">
+                        <div class="guide-content-scroller custom-scrollbar" id="guideContent">
+                            <!-- Guide content goes here -->
+                        </div>
+                        <div class="guide-sources-panel" id="guideSourcesPanel" style="width:250px;border-left:1px solid var(--border-subtle);display:flex;flex-direction:column;overflow:hidden;">
+                            <div class="guide-sources-header" style="padding:0.75rem 1rem;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--outline);border-bottom:1px solid var(--border-subtle)">Sources Cited</div>
+                            <div class="guide-sources-list custom-scrollbar" id="guideSourcesList" style="flex:1;overflow-y:auto;padding:0.5rem">
+                                <!-- Cited sources list -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flashcards -->
+            <div class="tab-panel" id="panel-graph" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+                <div class="graph-toolbar" style="padding:0.5rem 1.25rem;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:1rem;">
+                        <div style="font-weight:600;font-size:0.875rem;white-space:nowrap;">Active Recall Flashcards</div>
+                        <!-- Mode Selector Toggle -->
+                        <div style="display:flex;gap:0.25rem;background:rgba(255,255,255,0.04);padding:0.2rem;border-radius:8px;">
+                            <button class="btn btn-sm" id="btnStudyMode" onclick="setFlashcardView('study')" style="background:var(--primary);color:#fff;border-radius:6px;height:28px;font-size:0.75rem;padding:0 0.75rem;border:none;">Study Mode</button>
+                            <button class="btn btn-sm" id="btnManageMode" onclick="setFlashcardView('manage')" style="background:transparent;color:var(--text-secondary);border-radius:6px;height:28px;font-size:0.75rem;padding:0 0.75rem;border:none;">Manage Deck</button>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Flashcard Generator Input -->
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:450px;">
+                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate flashcards (e.g. 'Test me on neuroplasticity')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
+                        <button class="btn btn-sm btn-primary" onclick="generateConceptCard()" id="btnGenerateConcept" style="height:32px;white-space:nowrap;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">smart_toy</span> Generate</button>
+                    </div>
+
+                    <div style="display:flex;gap:0.5rem">
+                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add Card</button>
+                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh</button>
+                    </div>
+                </div>
+                <div class="graph-container" id="graphContainer" style="flex:1;position:relative;background:var(--background);overflow-y:auto;display:flex;flex-direction:column;">
+                    <!-- Study Mode Active Player -->
+                    <div id="flashcardStudyView" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:2rem;gap:1.5rem;">
+                        <!-- Flashcard player goes here -->
+                    </div>
+
+                    <!-- Manage Deck Editor -->
+                    <div id="flashcardManageView" style="display:none;width:100%;height:100%;">
+                        <!-- Cards edit grid goes here -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Notes -->
             <div class="tab-panel" id="panel-notes">
                 <div id="notesListView">
-                    <div class="notes-toolbar"><button class="btn btn-primary btn-sm" onclick="createNote()">+ New Note</button></div>
+                    <div class="notes-toolbar"><button class="btn btn-primary btn-sm" onclick="createNote()"><span class="material-symbols-outlined" style="font-size:14px">add</span> New note</button></div>
                     <div class="notes-list" id="notesList"></div>
                 </div>
                 <div class="note-editor" id="noteEditorView">
                     <div class="note-editor-header">
-                        <button class="btn btn-sm" onclick="saveAndCloseNote()">← Save & Back</button>
+                        <button class="btn btn-sm btn-soft" onclick="saveAndCloseNote()"><span class="material-symbols-outlined" style="font-size:14px">save</span> Save</button>
                         <input type="text" class="note-title-input" id="noteTitleInput" placeholder="Note title...">
-                        <button class="btn btn-sm btn-danger" onclick="deleteCurrentNote()">🗑</button>
+                        <button class="btn btn-sm" id="noteIndexBtn" onclick="toggleNoteIndex()" data-indexed="0"><span class="material-symbols-outlined" style="font-size:14px">database</span> Index</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteCurrentNote()"><span class="material-symbols-outlined" style="font-size:14px">delete</span> Delete</button>
                     </div>
                     <div class="note-content-area"><textarea class="note-textarea" id="noteContentArea" placeholder="Start writing..."></textarea></div>
                 </div>
             </div>
+
             <!-- Editor -->
             <div class="tab-panel" id="panel-editor">
                 <div class="editor-area">
                     <div class="editor-toolbar-custom">
-                        <button class="btn btn-sm" onclick="insertNoteIntoEditor()">📝 Insert Note</button>
+                        <button class="btn btn-sm btn-soft" onclick="insertNoteIntoEditor()"><span class="material-symbols-outlined" style="font-size:14px">note_add</span> Insert note</button>
                         <div style="flex:1"></div>
-                        <span style="font-size:0.6875rem;color:var(--text-muted);" id="wordCount">0 words</span>
-                        <button class="btn btn-sm" onclick="exportDoc('txt')">📄 TXT</button>
-                        <button class="btn btn-sm" onclick="exportDoc('md')">📋 MD</button>
-                        <button class="btn btn-sm" onclick="exportDoc('docx')">📘 DOCX</button>
-                        <button class="btn btn-sm" onclick="window.print()">🖨 PDF</button>
+                        <span style="font-family:var(--font-mono);font-size:0.6875rem;color:var(--outline);letter-spacing:0.05em;" id="wordCount">0 words</span>
+                        <button class="btn btn-sm btn-ghost" onclick="exportDoc('txt')"><span class="material-symbols-outlined" style="font-size:14px">download</span> TXT</button>
+                        <button class="btn btn-sm btn-ghost" onclick="exportDoc('md')"><span class="material-symbols-outlined" style="font-size:14px">download</span> MD</button>
+                        <button class="btn btn-sm btn-ghost" onclick="exportDoc('docx')"><span class="material-symbols-outlined" style="font-size:14px">download</span> DOCX</button>
+                        <button class="btn btn-sm btn-ghost" onclick="window.print()"><span class="material-symbols-outlined" style="font-size:14px">print</span> PDF</button>
                     </div>
                     <div class="editor-container"><div id="quillEditor"></div></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ═══ Right Sidebar ═══ -->
+    <div class="sidebar sidebar-right">
+        <div class="sidebar-header">
+            <div class="logo" style="font-size: 1.05rem;">
+                <span class="material-symbols-outlined logo-icon" style="font-size:18px;">folder_open</span>
+                Context & Files
+            </div>
+        </div>
+        
+        <div class="sidebar-content custom-scrollbar">
+            <!-- Notebooks Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">
+                    Notebooks
+                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="createNotebook()" title="New Notebook">+ NEW</button>
+                </div>
+            </div>
+            <div class="sidebar-list custom-scrollbar" id="notebookList"></div>
+
+            <!-- Sources Section -->
+            <div class="sidebar-section" style="margin-top: 1rem;">
+                <div class="sidebar-section-title">Sources <span id="sourceCount" class="tab-badge" style="margin-left: 0.5rem;">0</span></div>
+            </div>
+            <div id="sourceList" class="sidebar-list custom-scrollbar"></div>
         </div>
     </div>
 </div>
@@ -305,10 +310,10 @@
 <!-- Global citation tooltip -->
 <div id="citationTooltip"><div class="ct-header" id="ctHeader"></div><div class="ct-text" id="ctText"></div></div>
 
-<!-- Selection popup for chat text -->
+<!-- Selection popup -->
 <div class="selection-popup" id="selectionPopup">
-    <button class="sel-btn" onclick="doFollowUp()">💬 Follow up</button>
-    <button class="sel-btn" onclick="doAddToNote()">📝 Add to Note</button>
+    <button class="sel-btn" onclick="doFollowUp()"><span class="material-symbols-outlined" style="font-size:14px">reply</span> Follow up</button>
+    <button class="sel-btn" onclick="doAddToNote()"><span class="material-symbols-outlined" style="font-size:14px">bookmark_add</span> Note</button>
 </div>
 
 <!-- AI Panel -->
@@ -325,11 +330,11 @@
         </div>
     </div>
     <div class="ai-panel-actions">
-        <button class="ai-btn" onclick="aiAssist('grammar')">✏️ Grammar</button>
-        <button class="ai-btn" onclick="aiAssist('rewrite')">🔄 Rewrite</button>
-        <button class="ai-btn" onclick="aiAssist('define')">📖 Define</button>
-        <button class="ai-btn" onclick="aiAssist('simplify')">✨ Simplify</button>
-        <button class="ai-btn" onclick="aiAssist('expand')">📝 Expand</button>
+        <button class="ai-btn" onclick="aiAssist('grammar')"><span class="material-symbols-outlined" style="font-size:14px">spellcheck</span> Grammar</button>
+        <button class="ai-btn" onclick="aiAssist('rewrite')"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Rewrite</button>
+        <button class="ai-btn" onclick="aiAssist('define')"><span class="material-symbols-outlined" style="font-size:14px">menu_book</span> Define</button>
+        <button class="ai-btn" onclick="aiAssist('simplify')"><span class="material-symbols-outlined" style="font-size:14px">compress</span> Simplify</button>
+        <button class="ai-btn" onclick="aiAssist('expand')"><span class="material-symbols-outlined" style="font-size:14px">expand</span> Expand</button>
     </div>
     <div class="ai-result" id="aiResult" style="display:none"></div>
     <div class="ai-result-actions" id="aiResultActions" style="display:none">
@@ -340,58 +345,316 @@
 
 <div class="note-selector" id="noteSelector"></div>
 
-<!-- Modals -->
+<!-- ═══ Modals ═══ -->
 <div class="modal-overlay" id="modal-upload">
     <div class="modal">
-        <h3>📄 Upload Document <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <h3><span class="material-symbols-outlined" style="font-size:18px">upload_file</span> Upload document <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group"><label class="input-label">Chunk preset</label>
+            <select class="input" id="chunkPresetSelect">
+                <option value="auto">Auto (recommended)</option>
+                <option value="compact">Compact</option>
+                <option value="balanced">Balanced</option>
+                <option value="dense">Dense</option>
+            </select>
+        </div>
         <div class="file-drop" id="fileDrop" onclick="document.getElementById('fileInput').click()">
-            <p style="font-size:1.25rem;margin-bottom:0.375rem;">📁</p><p>Drag & drop or click to browse</p>
-            <p style="margin-top:0.25rem;font-size:0.625rem;color:var(--text-muted)">PDF, TXT, MD</p>
+            <p style="font-size:1.5rem;margin-bottom:0.5rem;opacity:0.4"><span class="material-symbols-outlined" style="font-size:28px">cloud_upload</span></p>
+            <p>Drag & drop or click to browse</p>
+            <p style="margin-top:0.5rem;font-size:0.75rem;color:var(--outline);letter-spacing:0.05em">PDF · TXT · MD</p>
             <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md" onchange="handleFileUpload(this.files)">
-        </div><div id="uploadStatus"></div>
+        </div>
+        <div id="uploadStatus"></div>
     </div>
 </div>
+
 <div class="modal-overlay" id="modal-url">
     <div class="modal">
-        <h3>🌐 Add Website <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <h3><span class="material-symbols-outlined" style="font-size:18px">link</span> Add website <button class="modal-close" onclick="closeModals()">&times;</button></h3>
         <div class="input-group"><label class="input-label">URL</label><input type="url" class="input" id="urlInput" placeholder="https://example.com"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="handleURLSubmit()">Add</button><div id="urlStatus"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="handleURLSubmit()">Add source</button>
+        <div id="urlStatus"></div>
     </div>
 </div>
+
 <div class="modal-overlay" id="modal-youtube">
     <div class="modal">
-        <h3>🎥 YouTube Video <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <h3><span class="material-symbols-outlined" style="font-size:18px">smart_display</span> YouTube video <button class="modal-close" onclick="closeModals()">&times;</button></h3>
         <div class="input-group"><label class="input-label">YouTube URL</label><input type="url" class="input" id="youtubeInput" placeholder="https://youtube.com/watch?v=..."></div>
-        <button class="btn btn-primary" style="width:100%" onclick="handleYouTubeSubmit()">Extract</button><div id="youtubeStatus"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="handleYouTubeSubmit()">Extract transcript</button>
+        <div id="youtubeStatus"></div>
     </div>
 </div>
-<!-- New Note Name Modal -->
+
+<div class="modal-overlay" id="modal-clipboard">
+    <div class="modal">
+        <h3><span class="material-symbols-outlined" style="font-size:18px">content_paste</span> Paste text <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group"><label class="input-label">Title</label><input type="text" class="input" id="clipboardTitle" placeholder="Pasted text"></div>
+        <div class="input-group"><label class="input-label">Content</label><textarea class="input" id="clipboardText" rows="8" style="resize:vertical"></textarea></div>
+        <button class="btn btn-primary" style="width:100%" onclick="handleClipboardSubmit()">Add source</button>
+        <div id="clipboardStatus"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-search">
+    <div class="modal" style="max-width:640px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px">search</span> Semantic search <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group"><input type="text" class="input" id="searchInput" placeholder="Search your sources..."></div>
+        <button class="btn btn-primary" style="width:100%" onclick="runSearch()">Search</button>
+        <div id="searchResults" style="margin-top:1rem;max-height:300px;overflow:auto"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-compare">
+    <div class="modal" style="max-width:720px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px">compare_arrows</span> Compare sources <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <p style="font-size:0.8125rem;color:var(--secondary);margin-bottom:0.5rem">Select 2+ sources to compare</p>
+        <div id="compareSourceList"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="runCompare()">Compare</button>
+        <div id="compareResult" style="margin-top:1.25rem;max-height:400px;overflow-y:auto;font-size:0.875rem;line-height:1.6;color:var(--on-surface-variant)"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-source">
+    <div class="modal" style="max-width:800px;width:90%">
+        <h3 id="sourceViewerTitle"><span class="material-symbols-outlined" style="font-size:18px">description</span> Source <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div id="sourceViewerMeta" style="font-size:0.6875rem;color:var(--secondary);margin-bottom:0.5rem"></div>
+        <div id="sourcePdfPages" style="display:none"></div>
+        <div id="sourceChunksView" style="display:none;max-height:400px;overflow-y:auto"></div>
+        <textarea class="input" id="sourceEditorText" rows="16" style="width:100%;display:none;font-family:var(--font-mono);font-size:0.8125rem"></textarea>
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+            <button class="btn btn-primary" id="sourceSaveBtn" onclick="saveSourceContent()"><span class="material-symbols-outlined" style="font-size:14px">save</span> Save & re-index</button>
+            <button class="btn btn-sm btn-ghost" id="sourceRefreshBtn" onclick="refreshCurrentSource()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh</button>
+        </div>
+        <div id="sourceViewerStatus"></div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="modal-newNote">
     <div class="modal">
-        <h3>📝 New Note <button class="modal-close" onclick="closeModals()">&times;</button></h3>
-        <div class="input-group"><label class="input-label">Note Name</label><input type="text" class="input" id="newNoteNameInput" placeholder="My Note"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="saveNewNoteFromChat()">Save Note</button>
+        <h3><span class="material-symbols-outlined" style="font-size:18px">sticky_note_2</span> New note <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group"><label class="input-label">Note name</label><input type="text" class="input" id="newNoteNameInput" placeholder="Untitled note"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="saveNewNoteFromChat()">Save note</button>
     </div>
 </div>
 
+<div class="modal-overlay" id="modal-settings">
+    <div class="modal" style="max-width:520px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px">settings</span> Settings <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="settings-section">
+            <h4>Model</h4>
+            <div id="settingsModelInfo" style="font-size:0.8125rem;color:var(--secondary)">Loading...</div>
+        </div>
+        <div class="settings-section">
+            <h4>Chunk preset</h4>
+            <select class="input" id="settingsChunkPreset">
+                <option value="auto">Auto (recommended)</option>
+                <option value="compact">Compact</option>
+                <option value="balanced">Balanced</option>
+                <option value="dense">Dense</option>
+            </select>
+            <h4 style="margin-top:0.75rem">Ingest mode</h4>
+            <select class="input" id="settingsIngestMode">
+                <option value="quality">Quality — larger chunks, full structure</option>
+                <option value="fast">Fast — compact chunks, section-aware</option>
+            </select>
+            <button class="btn btn-soft btn-sm" style="margin-top:0.5rem" onclick="saveChunkPreset()">Save ingest settings</button>
+        </div>
+        <div class="settings-section">
+            <h4>Performance</h4>
+            <select class="input" id="settingsPerformanceMode">
+                <option value="fast">Fast — vector search, minimal latency</option>
+                <option value="quality">Quality — hybrid search + reranking</option>
+            </select>
+            <button class="btn btn-soft btn-sm" style="margin-top:0.5rem" onclick="savePerformanceMode()">Save performance mode</button>
+        </div>
+        <div class="settings-section">
+            <h4>Web discovery</h4>
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8125rem;margin-bottom:0.5rem">
+                <input type="checkbox" id="settingsDiscoverEnabled"> Enable Discover in sidebar
+            </label>
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8125rem;margin-bottom:0.5rem">
+                <input type="checkbox" id="settingsDiscoverAutoSearch"> Auto-fetch relevant websites during chat
+            </label>
+            <select class="input" id="settingsDiscoverProvider" style="margin-bottom:0.5rem">
+                <option value="duckduckgo">DuckDuckGo (free)</option>
+                <option value="tavily">Tavily (API key)</option>
+                <option value="brave">Brave Search (API key)</option>
+            </select>
+            <input class="input" id="settingsDiscoverApiKey" type="password" placeholder="API key (optional for DDG)" style="margin-bottom:0.5rem">
+            <input class="input" id="settingsDiscoverMax" type="number" min="3" max="15" value="8" placeholder="Max results" style="margin-bottom:0.5rem">
+            <button class="btn btn-soft btn-sm" onclick="saveDiscoverSettings()">Save discovery settings</button>
+        </div>
+        <div class="settings-section">
+            <h4>Text-to-speech</h4>
+            <div id="settingsTtsInfo" style="font-size:0.8125rem;color:var(--secondary)">Checking...</div>
+        </div>
+        <div class="settings-section">
+            <h4>System health</h4>
+            <div class="health-dots" id="settingsHealth"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-discover">
+    <div class="modal" style="max-width:640px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px">language</span> Discover sources <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <p style="font-size:0.8125rem;color:var(--secondary);margin-bottom:0.75rem">Search the web based on your notebook topic. Select URLs to ingest.</p>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+            <input class="input" id="discoverQuery" placeholder="Search query (auto-filled from notebook)" style="flex:1">
+            <button class="btn btn-soft btn-sm" onclick="runDiscoverSearch()">Search</button>
+        </div>
+        <div id="discoverStatus"></div>
+        <div id="discoverResults" style="max-height:320px;overflow-y:auto;margin:0.5rem 0"></div>
+        <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-primary btn-sm" onclick="ingestSelectedDiscover()">Ingest selected</button>
+            <button class="btn btn-ghost btn-sm" onclick="closeModals()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- Mobile Bottom Nav -->
+<nav class="mobile-bottom-nav" id="mobileNav">
+    <a href="#" class="active" onclick="mobileNavSwitch('chat',this);return false;">
+        <span class="material-symbols-outlined" style="font-size:22px;font-variation-settings:'FILL' 1">chat</span>
+        <span class="nav-label">Chat</span>
+    </a>
+    <a href="#" onclick="mobileNavSwitch('notes',this);return false;">
+        <span class="material-symbols-outlined" style="font-size:22px">menu_book</span>
+        <span class="nav-label">Notebooks</span>
+    </a>
+    <a href="#" onclick="mobileNavSwitch('sources',this);return false;">
+        <span class="material-symbols-outlined" style="font-size:22px">database</span>
+        <span class="nav-label">Sources</span>
+    </a>
+</nav>
+
+<!-- Quill -->
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+
+
+<!-- App Logic (original, unmodified) -->
 <script>
 const API = '';
-let activeNotebookId = null, notebooks = [], sources = [], chatHistory = [], notes = [], currentNoteId = null, isLoading = false, quill = null, currentSpeech = null;
-let followupContext = '', selectedChatText = '', grammarTimer = null;
+let activeNotebookId = localStorage.getItem('active_notebook_id') ? parseInt(localStorage.getItem('active_notebook_id')) : null, notebooks = [], sources = [], chatHistory = [], notes = [], currentNoteId = null, isLoading = false, quill = null, currentSpeech = null, currentAudio = null, ttsAvailable = false, discoverEnabled = false, discoverCandidates = [];
+let followupContext = '', selectedChatText = '', grammarTimer = null, currentSourceId = null, currentSourceData = null, docSaveTimer = null, highlightChunkIndex = null;
+let performanceMode = 'fast', activeIngestJobs = [], healthPollTimer = null, ingestPollTimer = null;
+let selectedChatImageBase64 = null;
+const ONBOARDING_KEY = 'carnetlm_onboarding_dismissed';
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = message;
+    container.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+function renderMath(element) {
+    if (window.renderMathInElement && element) {
+        window.renderMathInElement(element, {
+            delimiters: [
+                {left: "$$", right: "$$", display: true},
+                {left: "$", right: "$", display: false},
+                {left: "\\(", right: "\\)", display: false},
+                {left: "\\[", right: "\\]", display: true}
+            ],
+            throwOnError: false
+        });
+    }
+}
+
+function handleChatImageSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        selectedChatImageBase64 = e.target.result;
+        document.getElementById('chatImagePreviewImg').src = selectedChatImageBase64;
+        document.getElementById('chatImageName').textContent = file.name;
+        document.getElementById('chatImagePreviewBar').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearChatImage() {
+    selectedChatImageBase64 = null;
+    document.getElementById('chatImageInput').value = '';
+    document.getElementById('chatImagePreviewBar').style.display = 'none';
+}
+
+// API retry wrapper with exponential backoff
+async function fetchWithRetry(url, options = {}, maxRetries = 5, baseDelay = 1000) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const response = await fetch(url, options);
+            if (response.ok) return response;
+            if (attempt === maxRetries - 1) throw new Error(`Failed after ${maxRetries} retries`);
+        } catch (error) {
+            if (attempt === maxRetries - 1) throw error;
+            const delay = baseDelay * Math.pow(2, attempt);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
-    initQuill(); await loadNotebooks(); await loadModels(); setupDragDrop();
-    document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeModals(); }));
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModals(); dismissAI(); } });
-    // Chat text selection handler
-    document.getElementById('chatMessages').addEventListener('mouseup', handleChatSelection);
-    document.addEventListener('mousedown', e => { if (!e.target.closest('.selection-popup')) document.getElementById('selectionPopup').classList.remove('active'); });
+    initQuill();
+    
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    
+    try {
+        // Progressive loading with retry logic
+        await fetchWithRetry(`${API}/api/settings/performance`)
+            .then(r => r.json())
+            .then(d => {
+                performanceMode = d.mode || 'fast';
+                updatePerfToggleUI();
+            })
+            .catch(() => { performanceMode = 'fast'; });
+        
+        await loadNotebooks();
+        
+        await fetchWithRetry(`${API}/api/models`)
+            .then(r => r.json())
+            .then(data => {
+                populateModelSelect(data);
+            })
+            .catch(() => { populateModelSelect([]); });
+        
+        setupDragDrop();
+        startHealthPolling();
+        document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) closeModals(); }));
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModals(); dismissAI(); } });
+        document.getElementById('chatMessages').addEventListener('mouseup', handleChatSelection);
+        document.addEventListener('click', handleCitationClick);
+        document.addEventListener('mousedown', e => { if (!e.target.closest('.selection-popup')) document.getElementById('selectionPopup').classList.remove('active'); });
+        refreshIcons();
+        
+        // Hide loading overlay after successful initialization
+        if (loadingOverlay) {
+            loadingOverlay.classList.add('hidden');
+            setTimeout(() => loadingOverlay.style.display = 'none', 300);
+        }
+    } catch (error) {
+        console.error('Failed to initialize:', error);
+        if (loadingOverlay) {
+            loadingOverlay.querySelector('.loading-text').textContent = 'Failed to connect. Please refresh.';
+        }
+    }
 });
 
 function initQuill() {
     quill = new Quill('#quillEditor', { theme: 'snow', placeholder: 'Start writing your document...', modules: { toolbar: [[{header:[1,2,3,false]}],['bold','italic','underline','strike'],[{list:'ordered'},{list:'bullet'}],['blockquote','code-block'],['link'],['clean']] } });
-    quill.on('text-change', () => { const t = quill.getText().trim(); document.getElementById('wordCount').textContent = t ? t.split(/\s+/).length + ' words' : '0 words'; });
+    quill.on('text-change', () => {
+        const t = quill.getText().trim();
+        document.getElementById('wordCount').textContent = t ? t.split(/\s+/).length + ' words' : '0 words';
+        scheduleDocumentSave();
+    });
     quill.on('selection-change', (range) => {
         if (range && range.length > 0) {
             const bounds = quill.getBounds(range.index, range.length);
@@ -402,7 +665,6 @@ function initQuill() {
             panel.classList.add('active');
             document.getElementById('aiResult').style.display = 'none';
             document.getElementById('aiResultActions').style.display = 'none';
-            // Auto grammar check with debounce
             const gs = document.getElementById('grammarStatus');
             gs.className = 'ai-grammar-status checking'; document.getElementById('grammarIcon').textContent = '⏳'; document.getElementById('grammarText').textContent = 'Checking...';
             clearTimeout(grammarTimer);
@@ -413,7 +675,6 @@ function initQuill() {
     });
 }
 
-// ─── Auto Grammar Check ───────────────────────────
 async function autoGrammarCheck(text) {
     if (!text || text.trim().length < 3) return;
     const gs = document.getElementById('grammarStatus');
@@ -429,7 +690,6 @@ async function autoGrammarCheck(text) {
         } else {
             gs.className = 'ai-grammar-status bad'; document.getElementById('grammarIcon').textContent = '⚠'; document.getElementById('grammarText').textContent = 'Suggestions available — click to see';
             window._grammarResult = result;
-            // Auto-show the suggestion
             document.getElementById('grammarSugText').textContent = result;
             document.getElementById('grammarSuggestion').classList.add('active');
         }
@@ -457,11 +717,8 @@ function acceptGrammar() {
     document.getElementById('grammarText').textContent = 'Correction applied';
 }
 
-function dismissGrammar() {
-    document.getElementById('grammarSuggestion').classList.remove('active');
-}
+function dismissGrammar() { document.getElementById('grammarSuggestion').classList.remove('active'); }
 
-// ─── Chat Text Selection ──────────────────────────
 function handleChatSelection(e) {
     const sel = window.getSelection();
     const text = sel?.toString().trim();
@@ -523,7 +780,6 @@ async function appendToNoteAndOpen(noteId, enc) {
     document.getElementById('noteSelector').classList.remove('active');
     await fetch(`${API}/api/notes/${noteId}/append`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text }) });
     await loadNotes();
-    // Open note and highlight the new text
     switchTab('notes');
     const res = await fetch(`${API}/api/notes/${noteId}`); const note = await res.json();
     currentNoteId = noteId;
@@ -531,137 +787,995 @@ async function appendToNoteAndOpen(noteId, enc) {
     document.getElementById('noteContentArea').value = note.content || '';
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('noteEditorView').classList.add('active');
-    // Select the newly added text at the bottom
     const ta = document.getElementById('noteContentArea');
     const start = (note.content || '').length - text.length;
     ta.focus(); ta.setSelectionRange(Math.max(0, start), (note.content || '').length);
     ta.scrollTop = ta.scrollHeight;
 }
 
-// ─── Notebooks ─────────────────────────────────────
+// Generic modal dialog manager
+function showCustomDialog({ title, message, isPrompt = false, isConfirm = false, isPassword = false, defaultValue = "" }) {
+    return new Promise((resolve) => {
+        let modal = document.getElementById('customDialogModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'customDialogModal';
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = '9999';
+            document.body.appendChild(modal);
+        }
+        
+        let inputHtml = '';
+        if (isPrompt) {
+            const inputType = isPassword ? 'password' : 'text';
+            const toggleHtml = isPassword ? `
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem;">
+                    <input type="checkbox" id="customDialogShowPassword" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
+                    <label for="customDialogShowPassword" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Password</label>
+                </div>
+            ` : '';
+            inputHtml = `
+                <div style="margin-top:1rem; width:100%;">
+                    <input type="${inputType}" id="customDialogInput" class="input" style="width:100%;" value="${esc(defaultValue)}">
+                    ${toggleHtml}
+                </div>
+            `;
+        }
+        
+        modal.innerHTML = `
+            <div class="modal" style="max-width:400px; padding:1.75rem; display:flex; flex-direction:column; gap:0.5rem;">
+                <h3 style="margin:0; display:flex; align-items:center; justify-content:space-between; width:100%;">
+                    <span style="display:flex; align-items:center; gap:0.5rem;">
+                        <span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">info</span>
+                        ${esc(title)}
+                    </span>
+                    <button class="modal-close" id="customDialogCloseBtn" style="font-size:1.25rem; background:none; border:none; cursor:pointer;">&times;</button>
+                </h3>
+                <div style="font-size:0.8125rem; color:var(--text-secondary); line-height:1.5; margin-top:0.5rem; word-break:break-word;">
+                    ${message}
+                </div>
+                ${inputHtml}
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.5rem; width:100%;">
+                    ${(isPrompt || isConfirm) ? `<button class="btn btn-ghost" id="customDialogCancelBtn" style="padding:0.4rem 1rem; font-size:0.8125rem;">Cancel</button>` : ''}
+                    <button class="btn btn-primary" id="customDialogOkBtn" style="padding:0.4rem 1rem; font-size:0.8125rem;">OK</button>
+                </div>
+            </div>
+        `;
+        
+        modal.classList.add('active');
+        
+        const cleanup = (value) => {
+            modal.classList.remove('active');
+            resolve(value);
+        };
+        
+        if (isPrompt) {
+            const inputEl = document.getElementById('customDialogInput');
+            inputEl.focus();
+            if (defaultValue) {
+                inputEl.setSelectionRange(0, defaultValue.length);
+            }
+            inputEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    cleanup(inputEl.value);
+                } else if (e.key === 'Escape') {
+                    cleanup(null);
+                }
+            });
+            
+            if (isPassword) {
+                const showPasswordCheckbox = document.getElementById('customDialogShowPassword');
+                showPasswordCheckbox.addEventListener('change', (e) => {
+                    inputEl.type = e.target.checked ? 'text' : 'password';
+                });
+            }
+        }
+        
+        document.getElementById('customDialogOkBtn').addEventListener('click', () => {
+            if (isPrompt) {
+                cleanup(document.getElementById('customDialogInput').value);
+            } else {
+                cleanup(true);
+            }
+        });
+        
+        const cancelBtn = document.getElementById('customDialogCancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                cleanup(isPrompt ? null : false);
+            });
+        }
+        
+        document.getElementById('customDialogCloseBtn').addEventListener('click', () => {
+            cleanup(isPrompt ? null : false);
+        });
+    });
+}
+
+async function customAlert(message, title = "Notice") {
+    return showCustomDialog({ title, message });
+}
+async function customConfirm(message, title = "Confirmation Required") {
+    return showCustomDialog({ title, message, isConfirm: true });
+}
+async function customPrompt(message, defaultValue = "", title = "Input Required") {
+    return showCustomDialog({ title, message, isPrompt: true, defaultValue });
+}
+async function customPasswordPrompt(message, title = "Password Required") {
+    return showCustomDialog({ title, message, isPrompt: true, isPassword: true });
+}
+
+window.alert = function(msg) {
+    customAlert(msg);
+};
+
 async function loadNotebooks() {
-    try { const res = await fetch(`${API}/api/notebooks`); const data = await res.json(); notebooks = data.notebooks || [];
+    try {
+        const res = await fetch(`${API}/api/notebooks`);
+        const data = await res.json();
+        notebooks = data.notebooks || [];
+        if (activeNotebookId && !notebooks.some(nb => nb.id === activeNotebookId)) activeNotebookId = null;
         if (!activeNotebookId && notebooks.length) activeNotebookId = notebooks[0].id;
-        renderNotebooks(); await Promise.all([loadSources(), loadHistory(), loadNotes()]);
+        if (activeNotebookId) localStorage.setItem('active_notebook_id', activeNotebookId);
+        renderNotebooks();
+        
+        if (activeNotebookId) {
+            const activeNb = notebooks.find(n => n.id === activeNotebookId);
+            if (activeNb && activeNb.is_private) {
+                let hash = sessionStorage.getItem(`notebook_pwd_${activeNotebookId}`);
+                if (!hash) {
+                    const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+                    if (pwd === null) {
+                        showPrivateNotebookPlaceholder();
+                        return;
+                    }
+                    hash = await sha256(pwd);
+                    // Verify via API
+                    const verifyRes = await fetch(`${API}/api/notebooks/${activeNotebookId}/verify`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password_hash: hash })
+                    });
+                    const verifyData = await verifyRes.json();
+                    if (!verifyData.success) {
+                        await customAlert('Invalid password');
+                        showPrivateNotebookPlaceholder();
+                        return;
+                    }
+                    sessionStorage.setItem(`notebook_pwd_${activeNotebookId}`, hash);
+                }
+            }
+            await Promise.all([loadSources(), loadHistory(), loadNotes(), loadDocument(), updateDiscoverButton(), loadStudyGuide()]);
+        } else {
+            showPrivateNotebookPlaceholder();
+        }
     } catch (e) { console.error(e); }
 }
+
+function showPrivateNotebookPlaceholder() {
+    activeNotebookId = null;
+    renderNotebooks();
+    sources = []; chatHistory = []; notes = [];
+    renderSources(); renderChat(); renderNotes();
+    document.getElementById('notesBadge').textContent = '0';
+    closeNoteEditor();
+    renderStudyGuideView(null);
+}
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function renderNotebooks() {
-    document.getElementById('notebookList').innerHTML = notebooks.map(nb => `<div class="nb-item ${nb.id === activeNotebookId ? 'active' : ''}" onclick="switchNotebook(${nb.id})"><span style="font-size:0.875rem">📓</span><span class="nb-name">${esc(nb.name)}</span><span class="nb-badge">${nb.chats}</span><button class="nb-delete" onclick="event.stopPropagation();deleteNotebook(${nb.id})" title="Delete">✕</button></div>`).join('');
+    const el = document.getElementById('notebookList');
+    const actions = document.getElementById('sidebarActions');
+    if (!notebooks.length) { 
+        el.innerHTML = '<div style="padding:0.75rem;font-size:0.75rem;color:var(--outline);text-align:center;font-family:var(--font-mono)">No notebooks</div>'; 
+        actions.style.display = 'none';
+        return; 
+    }
+    el.innerHTML = notebooks.map(nb => {
+        const lockHtml = nb.is_private ? `<span class="material-symbols-outlined" style="font-size:13px;color:var(--primary);margin-right:0.25rem;opacity:0.8;" title="Private Notebook">lock</span>` : '';
+        return `
+            <div class="nb-item ${nb.id === activeNotebookId ? 'active' : ''}" onclick="switchNotebook(${nb.id})">
+                <span class="material-symbols-outlined" style="font-size:16px;opacity:0.5">book</span>
+                <span class="nb-name">${esc(nb.name)}</span>
+                ${lockHtml}
+                <span class="nb-badge">${nb.sources || 0}</span>
+                <button class="nb-delete" onclick="event.stopPropagation();deleteNotebook(${nb.id})" title="Delete">
+                    <span class="material-symbols-outlined" style="font-size:14px">close</span>
+                </button>
+            </div>
+        `;
+    }).join('');
+    actions.style.display = activeNotebookId ? 'block' : 'none';
+    refreshIcons(el);
 }
-async function switchNotebook(id) { activeNotebookId = id; renderNotebooks(); await Promise.all([loadSources(), loadHistory(), loadNotes()]); closeNoteEditor(); }
-async function createNotebook() { const n = prompt('Notebook name:'); if (!n) return; await fetch(`${API}/api/notebooks`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:n}) }); await loadNotebooks(); }
-async function deleteNotebook(id) { if (!confirm('Delete this notebook?')) return; const r = await fetch(`${API}/api/notebooks/${id}`, {method:'DELETE'}); if (r.ok) { if (activeNotebookId===id) activeNotebookId=null; await loadNotebooks(); } else { const e=await r.json(); alert(e.detail||'Cannot delete'); } }
 
-// ─── Models ────────────────────────────────────────
+async function switchNotebook(id) {
+    if (activeNotebookId === id) return;
+    
+    // Switch away from old notebook -> lock it immediately if it was private
+    const oldNb = notebooks.find(n => n.id === activeNotebookId);
+    if (oldNb && oldNb.is_private) {
+        sessionStorage.removeItem(`notebook_pwd_${activeNotebookId}`);
+    }
+
+    const nb = notebooks.find(n => n.id === id);
+    if (nb && nb.is_private) {
+        // Try cached session storage token first
+        let hash = sessionStorage.getItem(`notebook_pwd_${id}`);
+        if (!hash) {
+            const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+            if (pwd === null) return; // user cancelled
+            hash = await sha256(pwd);
+            
+            // Verify via API
+            const r = await fetch(`${API}/api/notebooks/${id}/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password_hash: hash })
+            });
+            const d = await r.json();
+            if (!d.success) {
+                await customAlert('Invalid password');
+                return;
+            }
+            sessionStorage.setItem(`notebook_pwd_${id}`, hash);
+        }
+    }
+    activeNotebookId = id;
+    localStorage.setItem('active_notebook_id', id);
+    renderNotebooks();
+    await Promise.all([loadSources(), loadHistory(), loadNotes(), loadDocument(), updateDiscoverButton(), loadStudyGuide()]);
+    closeNoteEditor();
+}
+
+async function createNotebook(name) {
+    const n = name || await customPrompt('Notebook name:');
+    if (!n) return;
+
+    const makePrivate = await customConfirm('Do you want to make this a private notebook?');
+    let isPrivate = 0;
+    let hash = null;
+    if (makePrivate) {
+        const pwd = await customPasswordPrompt('Create a password for this private notebook:');
+        if (!pwd) {
+            await customAlert('Password is required for private notebooks. Notebook creation cancelled.');
+            return;
+        }
+        isPrivate = 1;
+        hash = await sha256(pwd);
+    }
+
+    const r = await fetch(`${API}/api/notebooks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: n,
+            is_private: isPrivate,
+            password_hash: hash
+        })
+    });
+
+    if (r.ok) {
+        const d = await r.json();
+        if (isPrivate) {
+            sessionStorage.setItem(`notebook_pwd_${d.id}`, hash);
+        }
+        await loadNotebooks();
+    }
+}
+
+async function deleteNotebook(id) {
+    const nb = notebooks.find(n => n.id === id);
+    let hash = "";
+    if (nb && nb.is_private) {
+        const pwd = await customPasswordPrompt('This notebook is private. Enter password to confirm deletion:');
+        if (pwd === null) return;
+        hash = await sha256(pwd);
+        
+        // Verify password first before deleting
+        const verifyRes = await fetch(`${API}/api/notebooks/${id}/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password_hash: hash })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+            await customAlert('Invalid password. Deletion cancelled.');
+            return;
+        }
+    }
+
+    if (!await customConfirm('Delete this notebook?')) return;
+    hideCitation();
+
+    let url = `${API}/api/notebooks/${id}`;
+    if (hash) {
+        url += `?password_hash=${hash}`;
+    }
+
+    const r = await fetch(url, { method: 'DELETE' });
+    if (r.ok) {
+        if (activeNotebookId === id) {
+            activeNotebookId = null;
+            localStorage.removeItem('active_notebook_id');
+        }
+        sessionStorage.removeItem(`notebook_pwd_${id}`);
+        await loadNotebooks();
+    } else {
+        const e = await r.json();
+        await customAlert(e.detail || 'Cannot delete');
+    }
+}
+
+async function loadPerformanceMode() {
+    try {
+        const d = await fetch(`${API}/api/settings/performance`).then(r => r.json());
+        performanceMode = d.mode || 'fast';
+        updatePerfToggleUI();
+    } catch { performanceMode = 'fast'; }
+}
+
+function updatePerfToggleUI() {
+    document.querySelectorAll('.perf-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === performanceMode);
+    });
+}
+
+async function setPerformanceMode(mode) {
+    try {
+        const r = await fetch(`${API}/api/settings/performance`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+        });
+        if (!r.ok) throw new Error('Failed to save mode');
+        performanceMode = mode;
+        updatePerfToggleUI();
+        showToast(mode === 'fast' ? 'Fast mode — vector search, minimal latency' : 'Quality mode — hybrid search and reranking', 'info');
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+function startHealthPolling() {
+    if (healthPollTimer) clearInterval(healthPollTimer);
+    healthPollTimer = setInterval(refreshConnectionStatus, 30000);
+}
+
+async function refreshConnectionStatus() {
+    try {
+        const health = await fetch(`${API}/api/health`).then(r => r.json());
+        updateConnectionUI(health);
+    } catch {
+        updateConnectionUI(null);
+    }
+}
+
+function updateConnectionUI(health) {
+    const st = document.getElementById('modelStatus');
+    const text = document.getElementById('modelStatusText');
+    if (!st || !text) return;
+    const dot = st.querySelector('.conn-dot');
+    if (!health) {
+        st.className = 'model-status offline';
+        if (dot) dot.className = 'conn-dot bad';
+        text.textContent = 'Offline';
+        return;
+    }
+    const ollamaUp = health.llm?.ollama?.available;
+    const hasModels = health.ollama_has_models;
+    const geminiUp = health.llm?.gemini?.available;
+    if (ollamaUp && hasModels) {
+        st.className = 'model-status online';
+        if (dot) dot.className = 'conn-dot ok';
+        text.textContent = `Local · ${health.active_provider || 'ollama'}`;
+    } else if (ollamaUp && !hasModels) {
+        st.className = 'model-status warn';
+        if (dot) dot.className = 'conn-dot warn';
+        text.textContent = 'Ollama up — pull a model';
+    } else if (geminiUp) {
+        st.className = 'model-status online';
+        if (dot) dot.className = 'conn-dot ok';
+        text.textContent = 'Cloud · Gemini';
+    } else {
+        st.className = 'model-status offline';
+        if (dot) dot.className = 'conn-dot bad';
+        text.textContent = 'Not connected';
+    }
+}
+
+function populateModelSelect(data) {
+    const sel = document.getElementById('modelSelect');
+    let opts = '';
+    if (data.ollama_available && data.models?.length) {
+        opts += data.models.map(m => `<option value="${m.name}" ${m.active && data.active_provider === 'ollama' ? 'selected' : ''}>${m.name} · Local</option>`).join('');
+    }
+    if (data.gemini) {
+        opts += `<option value="${data.gemini.name}" ${data.gemini.active ? 'selected' : ''}>${data.gemini.name} · Cloud</option>`;
+    }
+    if (!opts) opts = '<option value="">No models</option>';
+    sel.innerHTML = opts;
+}
+
 async function loadModels() {
-    try { const res = await fetch(`${API}/api/models`); const data = await res.json(); const sel = document.getElementById('modelSelect'); const st = document.getElementById('modelStatus');
-        if (data.ollama_available && data.models.length) { sel.innerHTML = data.models.map(m => `<option value="${m.name}" ${m.active?'selected':''}>${m.name} (${m.size})</option>`).join(''); st.className='model-status online'; st.textContent='● Connected'; }
-        else { sel.innerHTML='<option>Ollama offline</option>'; st.className='model-status offline'; st.textContent='○ Not running'; }
-    } catch { document.getElementById('modelStatus').className='model-status offline'; document.getElementById('modelStatus').textContent='○ Error'; }
+    try {
+        const [data, health] = await Promise.all([
+            fetch(`${API}/api/models`).then(r => r.json()),
+            fetch(`${API}/api/health`).then(r => r.json()),
+        ]);
+        populateModelSelect(data);
+        updateConnectionUI(health);
+    } catch {
+        updateConnectionUI(null);
+    }
 }
-async function selectModel(m) { if (!m) return; await fetch(`${API}/api/models/select`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:m})}); }
-function switchTab(tab) { document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab)); document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${tab}`)); }
+async function selectModel(m) {
+    if (!m) return;
+    const r = await fetch(`${API}/api/models/select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: m }) });
+    if (r.ok) { await loadModels(); showToast('Model updated', 'info'); }
+    else showToast('Could not switch model', 'error');
+}
+async function checkTTS() {
+    try { const r = await fetch(`${API}/api/tts/health`); const d = await r.json(); ttsAvailable = !!d.available; } catch { ttsAvailable = false; }
+}
+function switchTab(tab) { 
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab)); 
+    document.querySelectorAll('.tab-panel').forEach(p=>{
+        p.classList.toggle('active',p.id===`panel-${tab}`);
+        p.style.display = p.id === `panel-${tab}` ? 'flex' : 'none';
+    });
+    if (tab === 'graph') {
+        loadKnowledgeGraph();
+    }
+}
 
-// ─── Sources ───────────────────────────────────────
-async function loadSources() { try { const r=await fetch(`${API}/api/sources?notebook_id=${activeNotebookId}`); const d=await r.json(); sources=d.sources||[]; renderSources(); } catch(e){console.error(e);} }
+async function loadSources() {
+    try {
+        const r = await fetch(`${API}/api/sources?notebook_id=${activeNotebookId}`);
+        const d = await r.json();
+        sources = d.sources || [];
+        renderSources();
+        pollActiveIngestJobs();
+    } catch(e){ console.error(e); }
+}
+
+function pollActiveIngestJobs() {
+    if (!activeNotebookId) return;
+    if (ingestPollTimer) clearInterval(ingestPollTimer);
+    const tick = async () => {
+        try {
+            const d = await fetch(`${API}/api/ingest/jobs?notebook_id=${activeNotebookId}`).then(r => r.json());
+            const jobs = (d.jobs || []).filter(j => ['pending','extracting','embedding','indexing'].includes(j.status));
+            activeIngestJobs = jobs;
+            renderSources();
+            if (!jobs.length && ingestPollTimer) { clearInterval(ingestPollTimer); ingestPollTimer = null; }
+        } catch {}
+    };
+    tick();
+    ingestPollTimer = setInterval(tick, 1500);
+}
+
+function getSourceCategory(type, name) {
+    const normType = (type || '').toLowerCase();
+    const normName = (name || '').toLowerCase();
+    if (normType === 'youtube' || normName.includes('youtube.com') || normName.includes('youtu.be')) {
+        return 'YouTube';
+    }
+    if (normType === 'website' || normName.startsWith('http://') || normName.startsWith('https://')) {
+        return 'Web URLs';
+    }
+    return 'Files';
+}
+
 function renderSources() {
     document.getElementById('sourceCount').textContent = sources.length;
     const el = document.getElementById('sourceList');
-    if (!sources.length) { el.innerHTML='<div style="padding:0.5rem;font-size:0.6875rem;color:var(--text-muted);text-align:center">No sources yet</div>'; return; }
-    el.innerHTML = sources.map(s => { const ic=s.type==='Website'?'web':s.type==='YouTube'?'yt':'doc'; const em=s.type==='Website'?'🌐':s.type==='YouTube'?'🎥':'📄';
-        return `<div class="src-item"><div class="src-icon src-icon-${ic}">${em}</div><span class="src-name" title="${esc(s.name)}">${esc(s.name)}</span><button class="src-del" onclick="deleteSource(${s.id})">✕</button></div>`;
-    }).join('');
-}
-async function deleteSource(id) { await fetch(`${API}/api/sources/${id}`,{method:'DELETE'}); await loadSources(); }
+    if (!sources.length && !activeIngestJobs.length) {
+        el.innerHTML = '<div class="src-empty"><span class="material-symbols-outlined" style="font-size:24px;opacity:0.25">note_add</span><p>No sources yet</p><span>Drop files here or use the buttons above</span></div>';
+        refreshIcons(el);
+        renderOnboarding();
+        return;
+    }
 
-// ─── Chat ──────────────────────────────────────────
+    const categorized = {
+        'Files': [],
+        'Web URLs': [],
+        'YouTube': []
+    };
+
+    activeIngestJobs.forEach(j => {
+        const cat = getSourceCategory('', j.source_name);
+        const chunk = j.chunks_total ? ` ${j.chunks_done || 0}/${j.chunks_total}` : '';
+        const html = `<div class="src-item src-indexing"><div class="src-icon"><span class="src-spinner"></span></div><span class="src-name">${esc(j.source_name)}<span style="color:var(--outline);font-size:0.6875rem"> · ${esc(j.message || j.status)}${chunk}</span></span></div>`;
+        categorized[cat].push(html);
+    });
+
+    sources.forEach(s => {
+        const cat = getSourceCategory(s.type, s.name);
+        const ic = sourceIcon(s.type);
+        const label = esc(s.display_name || s.name);
+        const status = s.index_status && s.index_status !== 'ready' ? ` · ${s.index_status}` : '';
+        const deleting = s._deleting ? ' disabled' : '';
+        const html = `<div class="src-item" onclick="openSourceViewer(${s.id})" style="cursor:pointer"><div class="src-icon"><span class="material-symbols-outlined" style="font-size:16px">${ic}</span></div><span class="src-name" title="${label}">${label}${status ? `<span style="color:var(--outline);font-size:0.6875rem">${esc(status)}</span>` : ''}</span><button class="src-del" onclick="event.stopPropagation();deleteSource(${s.id})"${deleting} title="Delete source"><span class="material-symbols-outlined" style="font-size:14px">close</span></button></div>`;
+        categorized[cat].push(html);
+    });
+
+    let finalHtml = '';
+    for (const [category, items] of Object.entries(categorized)) {
+        if (items.length > 0) {
+            finalHtml += `<div class="src-category-header">${category}</div>`;
+            finalHtml += items.join('');
+        }
+    }
+
+    el.innerHTML = finalHtml;
+    refreshIcons(el);
+    renderOnboarding();
+}
+async function deleteSource(id) {
+    if (!await customConfirm('Delete this source?')) return;
+    const src = sources.find(s => s.id === id);
+    if (src) src._deleting = true;
+    renderSources();
+    const r = await fetch(`${API}/api/sources/${id}`, { method: 'DELETE' });
+    if (r.ok) {
+        showToast('Source deleted', 'info');
+        await loadSources();
+    } else {
+        const e = await r.json().catch(() => ({}));
+        showToast(e.detail || 'Could not delete source', 'error');
+        if (src) delete src._deleting;
+        await loadSources();
+    }
+}
+
 async function loadHistory() { try { const r=await fetch(`${API}/api/history?notebook_id=${activeNotebookId}`); const d=await r.json(); chatHistory=d.history||[]; renderChat(); } catch(e){console.error(e);} }
 
 function renderChat() {
     const el = document.getElementById('chatMessages');
-    if (!chatHistory.length) { el.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><h3>Ask anything about your documents</h3><p>Upload sources, then ask questions for cited answers.</p></div>'; return; }
+    if (!chatHistory.length) {
+        el.innerHTML='<div class="chat-empty"><div class="chat-empty-icon"><span class="material-symbols-outlined logo-icon" style="font-size:36px;font-variation-settings:\'FILL\' 1">auto_stories</span></div><h3>Ask anything about your documents</h3><p>Upload sources, then query for cited answers from your local model.</p></div>';
+        refreshIcons(el);
+        renderOnboarding();
+        return;
+    }
+    window._citationData = {};
+    _citationCounter = 0;
     el.innerHTML = chatHistory.map((msg, i) => {
-        if (msg.role === 'user') return `<div class="msg msg-user"><div class="msg-bubble">${esc(msg.content)}</div></div>`;
+        if (msg.role === 'user') {
+            const imgHtml = msg.image ? `<div style="margin-top:0.5rem;"><img src="${msg.image}" style="max-width:180px; max-height:120px; border-radius:6px; border:1px solid var(--border-subtle); display:block;"></div>` : '';
+            return `<div class="msg msg-user"><div class="msg-bubble">${esc(msg.content)}${imgHtml}</div></div>`;
+        }
         let html = formatResponse(msg.content, msg.sources);
         let srcTags = '';
         if (msg.sources?.length) { const uniq=[...new Map(msg.sources.map(s=>[s.source_file,s])).values()]; srcTags=`<div class="msg-sources">${uniq.map(s=>`<span class="msg-source-tag">${esc(s.source_file)}</span>`).join('')}</div>`; }
-        return `<div class="msg msg-assistant"><div class="msg-bubble">${html}${srcTags}</div><div class="msg-actions"><button class="msg-action-btn" onclick="speakText(this,${i})" title="Read aloud">🔊</button><button class="msg-action-btn" onclick="showNoteSelector(event,${i})" title="Save to note">📝 Note</button></div></div>`;
+        return `<div class="msg msg-assistant"><div class="msg-bubble">${html}${srcTags}</div><div class="msg-actions"><button class="msg-action-btn" onclick="speakText(this,${i})" title="Read aloud"><span class="material-symbols-outlined" style="font-size:14px">volume_up</span> Speak</button><button class="msg-action-btn" onclick="showNoteSelector(event,${i})" title="Save to note"><span class="material-symbols-outlined" style="font-size:14px">bookmark_add</span> Note</button></div></div>`;
     }).join('');
+    refreshIcons(el);
+    renderMath(el);
     el.scrollTop = el.scrollHeight;
+    renderOnboarding();
 }
 
 async function sendMessage(e) {
-    e.preventDefault(); const input=document.getElementById('chatInput'); let query=input.value.trim(); if (!query||isLoading) return;
-    // Add followup context
+    e.preventDefault(); if (!activeNotebookId) { alert('Create a notebook first'); return; }
+    const input = document.getElementById('chatInput');
+    let query = input.value.trim();
+    if (!query && !selectedChatImageBase64) return;
+    if (isLoading) return;
+    
+    let displayQuery = query;
+    const imgBase64 = selectedChatImageBase64;
+    
     if (followupContext) { query = `Regarding this text: "${followupContext}"\n\n${query}`; clearFollowup(); }
-    chatHistory.push({role:'user',content:input.value.trim(),sources:[]});
-    renderChat(); input.value=''; isLoading=true; document.getElementById('sendBtn').disabled=true;
-    const msgs=document.getElementById('chatMessages');
-    const ld=document.createElement('div'); ld.className='msg-loading'; ld.innerHTML='<div class="loading-dots"><span></span><span></span><span></span></div>&nbsp; Thinking...'; msgs.appendChild(ld); msgs.scrollTop=msgs.scrollHeight;
-    try { const r=await fetch(`${API}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,notebook_id:activeNotebookId})}); const d=await r.json();
-        chatHistory.push({role:'assistant',content:d.response,sources:d.sources_used||[]});
-    } catch(err) { chatHistory.push({role:'assistant',content:`Error: ${err.message}`,sources:[]}); }
-    finally { isLoading=false; document.getElementById('sendBtn').disabled=false; renderChat(); }
+    
+    chatHistory.push({ role: 'user', content: displayQuery || 'Analyzed Image', image: imgBase64, sources: [] });
+    renderChat();
+    
+    // Clear image selection
+    clearChatImage();
+    
+    input.value = ''; isLoading = true; document.getElementById('sendBtn').disabled = true;
+    const msgs = document.getElementById('chatMessages');
+    const streamMsg = document.createElement('div');
+    streamMsg.className = 'msg msg-assistant';
+    streamMsg.innerHTML = '<div class="msg-bubble" id="streamBubble"><span class="stream-cursor"></span></div>';
+    msgs.appendChild(streamMsg);
+    msgs.scrollTop = msgs.scrollHeight;
+    const bubble = document.getElementById('streamBubble');
+    let fullText = '';
+    let sourcesUsed = [];
+    try {
+        const r = await fetch(`${API}/api/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: query || "Describe the contents of this image",
+                notebook_id: activeNotebookId,
+                image_base64: imgBase64
+            })
+        });
+        if (!r.ok) throw new Error('Stream failed');
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || '';
+            for (const part of parts) {
+                const lines = part.split('\n');
+                let eventType = 'message', dataStr = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7);
+                    else if (line.startsWith('data: ')) dataStr = line.slice(6);
+                }
+                if (!dataStr) continue;
+                let data;
+                try { data = JSON.parse(dataStr); } catch { continue; }
+                if (eventType === 'status' && data.message) {
+                    bubble.innerHTML = `<span class="retrieval-status">${esc(data.message)}</span><span class="stream-cursor"></span>`;
+                } else if (eventType === 'token' && data.text) {
+                    fullText += data.text;
+                    bubble.textContent = fullText;  // Plain text, no formatting
+                    msgs.scrollTop = msgs.scrollHeight;
+                } else if (eventType === 'meta' || eventType === 'done') {
+                    if (data.sources_used) sourcesUsed = data.sources_used;
+                    bubble.innerHTML = formatResponse(fullText, sourcesUsed) + '<span class="stream-cursor"></span>';
+                    renderMath(bubble);
+                } else if (eventType === 'error') {
+                    throw new Error(data.message || 'Stream error');
+                }
+            }
+        }
+        chatHistory.push({ role: 'assistant', content: fullText || 'No response', sources: sourcesUsed });
+    } catch (err) {
+        chatHistory.push({ role: 'assistant', content: `Error: ${err.message}`, sources: [] });
+    } finally { isLoading = false; document.getElementById('sendBtn').disabled = false; renderChat(); }
 }
 
-// ─── TTS ───────────────────────────────────────────
-function speakText(btn, i) { if (currentSpeech){speechSynthesis.cancel();currentSpeech=null;btn.classList.remove('speaking');btn.textContent='🔊';return;} const t=chatHistory[i]?.content; if(!t)return; const c=t.replace(/\[(\d+)\]/g,'').replace(/\*\*/g,''); const u=new SpeechSynthesisUtterance(c); u.rate=1; btn.classList.add('speaking');btn.textContent='⏸'; currentSpeech=u; u.onend=()=>{currentSpeech=null;btn.classList.remove('speaking');btn.textContent='🔊';}; speechSynthesis.speak(u); }
+async function speakText(btn, i) {
+    const speakHtml = '<span class="material-symbols-outlined" style="font-size:14px">volume_up</span> Speak';
+    const stopHtml = '<span class="material-symbols-outlined" style="font-size:14px">pause</span> Stop';
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; btn.classList.remove('speaking'); btn.innerHTML = speakHtml; refreshIcons(btn); return; }
+    if (currentSpeech) { speechSynthesis.cancel(); currentSpeech = null; btn.classList.remove('speaking'); btn.innerHTML = speakHtml; refreshIcons(btn); return; }
+    const t = chatHistory[i]?.content; if (!t) return;
+    btn.classList.add('speaking'); btn.innerHTML = stopHtml; refreshIcons(btn);
+    if (!ttsAvailable) await checkTTS();
+    if (ttsAvailable) {
+        try {
+            const r = await fetch(`${API}/api/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: t }) });
+            if (r.ok) {
+                const blob = await r.blob();
+                currentAudio = new Audio(URL.createObjectURL(blob));
+                currentAudio.onended = () => { currentAudio = null; btn.classList.remove('speaking'); btn.innerHTML = speakHtml; refreshIcons(btn); };
+                currentAudio.play();
+                return;
+            }
+        } catch (e) { console.warn('Orpheus TTS failed, using browser fallback', e); }
+    }
+    const c = t.replace(/\[(\d+)\]/g, '').replace(/\*\*/g, '');
+    const u = new SpeechSynthesisUtterance(c); u.rate = 1; currentSpeech = u;
+    u.onend = () => { currentSpeech = null; btn.classList.remove('speaking'); btn.innerHTML = speakHtml; refreshIcons(btn); };
+    speechSynthesis.speak(u);
+}
 
-// ─── Notes ─────────────────────────────────────────
 async function loadNotes() { if(!activeNotebookId)return; try{const r=await fetch(`${API}/api/notebooks/${activeNotebookId}/notes`);const d=await r.json();notes=d.notes||[];document.getElementById('notesBadge').textContent=notes.length;renderNotes();}catch(e){console.error(e);} }
 function renderNotes() {
     const el=document.getElementById('notesList');
-    if(!notes.length){el.innerHTML='<div style="text-align:center;padding:3rem;color:var(--text-muted);font-size:0.8125rem"><p style="font-size:1.5rem;margin-bottom:0.5rem">📝</p><p>No notes yet</p></div>';return;}
+    if(!notes.length){el.innerHTML='<div style="text-align:center;padding:3rem;color:var(--outline);font-size:0.8125rem;font-family:var(--font-body)">No notes yet</div>';return;}
     el.innerHTML=notes.map(n=>`<div class="note-card" onclick="openNote(${n.id})"><div class="note-card-title">${esc(n.title)}</div><div class="note-card-preview">${esc(n.preview||'')}</div><div class="note-card-meta">${new Date(n.updated_at).toLocaleDateString()}</div></div>`).join('');
+    renderMath(el);
 }
 async function createNote() { const id=await fetch(`${API}/api/notebooks/${activeNotebookId}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'Untitled Note',content:''})}).then(r=>r.json()).then(d=>d.id); await loadNotes(); openNote(id); }
-async function openNote(id) { const r=await fetch(`${API}/api/notes/${id}`);const note=await r.json(); currentNoteId=id; document.getElementById('noteTitleInput').value=note.title; document.getElementById('noteContentArea').value=note.content||''; document.getElementById('notesListView').style.display='none'; document.getElementById('noteEditorView').classList.add('active'); }
+async function openNote(id) { const r=await fetch(`${API}/api/notes/${id}`);const note=await r.json(); currentNoteId=id; document.getElementById('noteTitleInput').value=note.title; document.getElementById('noteContentArea').value=note.content||''; document.getElementById('notesListView').style.display='none'; document.getElementById('noteEditorView').classList.add('active'); updateNoteIndexBtn(note.indexed_in_rag); }
+function updateNoteIndexBtn(indexed) {
+    const btn = document.getElementById('noteIndexBtn');
+    if (!btn) return;
+    btn.dataset.indexed = indexed ? '1' : '0';
+    btn.innerHTML = indexed
+        ? '<span class="material-symbols-outlined" style="font-size:14px">database</span> Indexed'
+        : '<span class="material-symbols-outlined" style="font-size:14px">database</span> Index';
+    refreshIcons(btn);
+}
+async function toggleNoteIndex() {
+    if (!currentNoteId) return;
+    await fetch(`${API}/api/notes/${currentNoteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: document.getElementById('noteTitleInput').value, content: document.getElementById('noteContentArea').value }) });
+    const indexed = document.getElementById('noteIndexBtn').dataset.indexed === '1';
+    await fetch(`${API}/api/notes/${currentNoteId}/index`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ indexed: !indexed }) });
+    updateNoteIndexBtn(!indexed);
+}
 function closeNoteEditor() { currentNoteId=null; document.getElementById('notesListView').style.display=''; document.getElementById('noteEditorView').classList.remove('active'); }
 async function saveAndCloseNote() { if(!currentNoteId)return; await fetch(`${API}/api/notes/${currentNoteId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:document.getElementById('noteTitleInput').value,content:document.getElementById('noteContentArea').value})}); closeNoteEditor(); await loadNotes(); }
-async function deleteCurrentNote() { if(!currentNoteId||!confirm('Delete?'))return; await fetch(`${API}/api/notes/${currentNoteId}`,{method:'DELETE'}); closeNoteEditor(); await loadNotes(); }
+
+async function loadDocument() {
+    if (!activeNotebookId || !quill) return;
+    try {
+        const r = await fetch(`${API}/api/notebooks/${activeNotebookId}/document`);
+        const d = await r.json();
+        if (d.html_content) quill.root.innerHTML = d.html_content;
+        else quill.setText('');
+    } catch (e) { console.error(e); }
+}
+function scheduleDocumentSave() {
+    if (!activeNotebookId) return;
+    clearTimeout(docSaveTimer);
+    docSaveTimer = setTimeout(async () => {
+        try {
+            await fetch(`${API}/api/notebooks/${activeNotebookId}/document`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ html_content: quill.root.innerHTML, title: 'Document' }),
+            });
+        } catch (e) { console.error('Doc save failed', e); }
+    }, 2000);
+}
+async function deleteCurrentNote() { if(!currentNoteId||!await customConfirm('Delete?'))return; await fetch(`${API}/api/notes/${currentNoteId}`,{method:'DELETE'}); closeNoteEditor(); await loadNotes(); }
 
 function showNoteSelector(event, i) { event.stopPropagation(); const text=chatHistory[i]?.content||''; showNotePickerForText(text); }
 
-// ─── Editor ────────────────────────────────────────
 async function insertNoteIntoEditor() { if(!notes.length){alert('No notes');return;} const sel=document.getElementById('noteSelector'); sel.innerHTML=notes.map(n=>`<div class="note-selector-item" onclick="doInsertNote(${n.id})">${esc(n.title)}</div>`).join(''); const btn=document.querySelector('.editor-toolbar-custom .btn'); const rect=btn.getBoundingClientRect(); sel.style.top=(rect.bottom+4)+'px'; sel.style.left=rect.left+'px'; sel.style.transform='none'; sel.classList.add('active'); setTimeout(()=>document.addEventListener('click',()=>sel.classList.remove('active'),{once:true}),10); }
 async function doInsertNote(id) { document.getElementById('noteSelector').classList.remove('active'); const r=await fetch(`${API}/api/notes/${id}`); const note=await r.json(); const range=quill.getSelection(true); quill.insertText(range.index,`\n${note.content}\n`,'user'); }
 
-// ─── AI Assist ─────────────────────────────────────
 async function aiAssist(action) {
     const range=quill.getSelection(); if(!range||range.length===0)return;
     const text=quill.getText(range.index,range.length);
     const resultEl=document.getElementById('aiResult'); const actionsEl=document.getElementById('aiResultActions');
-    resultEl.style.display='block'; resultEl.innerHTML='<span style="color:var(--accent)">⏳ Processing...</span>'; actionsEl.style.display='none';
+    resultEl.style.display='block'; resultEl.innerHTML='<span style="color:var(--outline);font-family:var(--font-mono);font-size:0.6875rem;letter-spacing:0.05em">Processing...</span>'; actionsEl.style.display='none';
     try { const r=await fetch(`${API}/api/ai/assist`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,action})}); const d=await r.json();
         resultEl.textContent=d.result; actionsEl.style.display='flex'; window._aiRange=range; window._aiResult=d.result;
-        // Hide Accept for "define" action
         document.getElementById('aiAcceptBtn').style.display = action === 'define' ? 'none' : '';
-    } catch(e) { resultEl.innerHTML=`<span style="color:var(--accent-red)">Error: ${e.message}</span>`; }
+    } catch(e) { resultEl.innerHTML=`<span style="color:var(--outline);font-family:var(--font-mono)">ERR: ${e.message}</span>`; }
 }
 function acceptAI() { if(window._aiRange&&window._aiResult){quill.deleteText(window._aiRange.index,window._aiRange.length);quill.insertText(window._aiRange.index,window._aiResult);} dismissAI(); }
 function dismissAI() { document.getElementById('aiPanel').classList.remove('active'); document.getElementById('aiResult').style.display='none'; document.getElementById('aiResultActions').style.display='none'; document.getElementById('grammarStatus').className='ai-grammar-status'; }
 
-// ─── Export ────────────────────────────────────────
 async function exportDoc(fmt) { const h=quill.root.innerHTML;const t=quill.getText().trim(); if(!t){alert('Editor is empty');return;} try{const r=await fetch(`${API}/api/export`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:h,format:fmt,filename:'document'})}); if(!r.ok){const e=await r.json();alert(e.detail);return;} const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`document.${fmt}`;a.click();URL.revokeObjectURL(u);}catch(e){alert('Export error: '+e.message);} }
 
-// ─── Upload / URL / YouTube ────────────────────────
-async function handleFileUpload(files) { if(!files.length)return; const st=document.getElementById('uploadStatus'); st.innerHTML='<div class="status-msg status-loading">⏳ Processing...</div>'; const fd=new FormData(); for(const f of files)fd.append('files',f); fd.append('notebook_id',activeNotebookId); try{const r=await fetch(`${API}/api/upload`,{method:'POST',body:fd}); const d=await r.json(); const ok=(d.results||[]).filter(r=>r.status==='ok');const err=(d.results||[]).filter(r=>r.error); let h=''; if(ok.length)h+=`<div class="status-msg status-success">✅ ${ok.length} file(s) processed</div>`; if(err.length)h+=`<div class="status-msg status-error">❌ ${err.map(r=>r.error).join(', ')}</div>`; st.innerHTML=h; await loadSources(); if(ok.length)setTimeout(closeModals,1200);}catch(e){st.innerHTML=`<div class="status-msg status-error">❌ ${e.message}</div>`;} }
-async function handleURLSubmit() { const url=document.getElementById('urlInput').value.trim(); if(!url)return; const st=document.getElementById('urlStatus'); st.innerHTML='<div class="status-msg status-loading">⏳ Scraping...</div>'; try{const r=await fetch(`${API}/api/url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:[url],notebook_id:activeNotebookId})}); const d=await r.json(); const res=(d.results||[])[0]||{}; if(res.status==='ok'){st.innerHTML=`<div class="status-msg status-success">✅ "${res.title}" — ${res.chunks} chunks</div>`; document.getElementById('urlInput').value=''; await loadSources(); setTimeout(closeModals,1200);} else st.innerHTML=`<div class="status-msg status-error">❌ ${res.error||'Failed'}</div>`;}catch(e){st.innerHTML=`<div class="status-msg status-error">❌ ${e.message}</div>`;} }
-async function handleYouTubeSubmit() { const url=document.getElementById('youtubeInput').value.trim(); if(!url)return; const st=document.getElementById('youtubeStatus'); st.innerHTML='<div class="status-msg status-loading">⏳ Extracting...</div>'; try{const r=await fetch(`${API}/api/youtube`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,notebook_id:activeNotebookId})}); if(r.ok){const d=await r.json();st.innerHTML=`<div class="status-msg status-success">✅ "${d.title}" — ${d.chunks} chunks</div>`;document.getElementById('youtubeInput').value='';await loadSources();setTimeout(closeModals,1200);} else{const e=await r.json();st.innerHTML=`<div class="status-msg status-error">❌ ${e.detail||'Failed'}</div>`;}}catch(e){st.innerHTML=`<div class="status-msg status-error">❌ ${e.message}</div>`;} }
+async function handleFileUpload(files) {
+    if (!files.length) return;
+    const st = document.getElementById('uploadStatus');
+    st.innerHTML = '<div class="status-msg status-loading">Uploading...</div>';
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    fd.append('notebook_id', activeNotebookId);
+    fd.append('chunk_preset', document.getElementById('chunkPresetSelect')?.value || 'auto');
+    try {
+        const r = await fetch(`${API}/api/upload`, { method: 'POST', body: fd });
+        const d = await r.json();
+        const jobIds = d.job_ids || [];
+        if (!jobIds.length) { st.innerHTML = '<div class="status-msg status-error">No jobs started</div>'; return; }
+        pollIngestJobs(jobIds, st);
+    } catch (e) { st.innerHTML = `<div class="status-msg status-error">✕ ${e.message}</div>`; }
+}
+async function pollIngestJobs(jobIds, stEl) {
+    pollActiveIngestJobs();
+    const poll = async () => {
+        const statuses = await Promise.all(jobIds.map(id => fetch(`${API}/api/ingest/jobs/${id}`).then(r => r.json())));
+        const msgs = statuses.map(s => {
+            const chunk = s.chunks_total ? ` · ${s.chunks_done || 0}/${s.chunks_total} chunks` : '';
+            return `${s.source_name}: ${s.message || s.status} (${s.progress || 0}%)${chunk}`;
+        });
+        stEl.innerHTML = `<div class="status-msg status-loading">${msgs.join('<br>')}</div>`;
+        const done = statuses.filter(s => ['completed', 'failed', 'cancelled'].includes(s.status)).length;
+        if (done < jobIds.length) { setTimeout(poll, 1000); return; }
+        const failed = statuses.filter(s => s.status === 'failed' || (s.result && s.result.error));
+        if (failed.length) {
+            const errMsg = failed.map(f => f.error || f.result?.error || f.message).join(', ');
+            stEl.innerHTML = `<div class="status-msg status-error">✕ ${esc(errMsg)}</div>`;
+            showToast(errMsg, 'error');
+        } else {
+            stEl.innerHTML = '<div class="status-msg status-success">✓ Files processed</div>';
+            showToast('Sources indexed', 'info');
+        }
+        await loadSources();
+        setTimeout(closeModals, 1200);
+    };
+    poll();
+}
+async function handleClipboardSubmit() {
+    const text = document.getElementById('clipboardText').value.trim();
+    const title = document.getElementById('clipboardTitle').value.trim() || 'Pasted Text';
+    const st = document.getElementById('clipboardStatus');
+    if (!text) return;
+    st.innerHTML = '<div class="status-msg status-loading">Processing...</div>';
+    try {
+        const r = await fetch(`${API}/api/clipboard`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, title, notebook_id: activeNotebookId }) });
+        const d = await r.json();
+        const jobIds = d.job_ids || [];
+        if (!jobIds.length) { st.innerHTML = '<div class="status-msg status-error">No jobs started</div>'; return; }
+        pollIngestJobs(jobIds, st);
+    } catch (e) { st.innerHTML = `<div class="status-msg status-error">${e.message}</div>`; }
+}
+async function runSearch() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+    const el = document.getElementById('searchResults');
+    el.innerHTML = '<div class="status-msg status-loading">Searching...</div>';
+    const r = await fetch(`${API}/api/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, notebook_id: activeNotebookId }) });
+    const d = await r.json();
+    el.innerHTML = (d.results || []).map(res => `<div style="border:1px solid var(--border-subtle);padding:0.625rem;margin-bottom:0.5rem;font-size:0.8125rem;border-radius:var(--radius)"><strong>${esc(res.source_file)}</strong> <span style="color:var(--outline)">score ${res.score?.toFixed(3)}</span><br>${esc(res.content)}</div>`).join('') || '<div>No results</div>';
+}
+function openCompareModal() {
+    const el = document.getElementById('compareSourceList');
+    el.innerHTML = sources.map(s => `<label style="display:block;font-size:0.8125rem;margin:0.25rem 0"><input type="checkbox" class="compare-chk" value="${s.name.replace(/"/g, '&quot;')}"> ${esc(s.display_name || s.name)}</label>`).join('');
+    return true;
+}
+async function runCompare() {
+    const names = [...document.querySelectorAll('.compare-chk:checked')].map(c => c.value);
+    if (names.length < 2) { showToast('Select at least 2 sources to compare', 'warning'); return; }
+    const el = document.getElementById('compareResult');
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:0.5rem;color:var(--primary);font-size:0.8125rem;"><div class="guide-spinner" style="width:16px;height:16px;"></div><span>Analyzing and comparing sources...</span></div>';
+    try {
+        const r = await fetch(`${API}/api/compare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_names: names, notebook_id: activeNotebookId }) });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || 'Compare failed', 'error'); el.innerHTML = `<span style="color:var(--danger)">${esc(d.detail || 'Failed')}</span>`; return; }
+        el.innerHTML = formatResponse(d.comparison || 'Done', []);
+    } catch (e) {
+        showToast(e.message, 'error');
+        el.innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
+    }
+}
+async function runSummary() {
+    if (!await customConfirm('Generate study guide from all sources?')) return;
+    switchTab('chat');
+    isLoading = true;
+    try {
+        const r = await fetch(`${API}/api/summary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notebook_id: activeNotebookId }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'Summary failed');
+        chatHistory.push({ role: 'user', content: 'Generate study guide', sources: [] });
+        chatHistory.push({ role: 'assistant', content: d.summary, sources: (d.sources_used || []).map(n => ({ source_file: n })) });
+        renderChat();
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { isLoading = false; }
+}
+async function exportChat(fmt) {
+    const r = await fetch(`${API}/api/chat/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notebook_id: activeNotebookId, format: fmt }) });
+    if (!r.ok) { alert('No chat to export'); return; }
+    const b = await r.blob(); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `chat.${fmt}`; a.click(); URL.revokeObjectURL(u);
+}
+async function clearChatHistory() {
+    if (!await customConfirm('Clear chat history?')) return;
+    await fetch(`${API}/api/history?notebook_id=${activeNotebookId}`, { method: 'DELETE' });
+    chatHistory = []; renderChat();
+}
+async function openSourceViewer(id, highlightText) {
+    highlightChunkIndex = null;
+    currentSourceId = id;
+    const r = await fetch(`${API}/api/sources/${id}/content`);
+    const d = await r.json();
+    currentSourceData = d;
+    const titleEl = document.getElementById('sourceViewerTitle');
+    titleEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px">description</span> ${esc(d.source?.name || 'Source')} <button class="modal-close" onclick="closeModals()">&times;</button>`;
+    document.getElementById('sourceViewerMeta').textContent = `${d.total_chunks} chunks · ${d.source?.type || ''}`;
+    const textEl = document.getElementById('sourceEditorText');
+    const pdfEl = document.getElementById('sourcePdfPages');
+    const chunksEl = document.getElementById('sourceChunksView');
+    const saveBtn = document.getElementById('sourceSaveBtn');
+    const refreshBtn = document.getElementById('sourceRefreshBtn');
+    textEl.style.display = 'none'; pdfEl.style.display = 'none'; pdfEl.innerHTML = '';
+    if (chunksEl) chunksEl.style.display = 'none';
+    const isPdf = Object.keys(d.page_text || {}).length > 0;
+    const canEdit = d.editable;
+    saveBtn.style.display = canEdit ? '' : 'none';
+    refreshBtn.style.display = ['Website', 'YouTube'].includes(d.source?.type) ? '' : 'none';
+    if (highlightText && chunksEl) {
+        chunksEl.style.display = 'block';
+        chunksEl.innerHTML = (d.chunks || []).map((c, i) => {
+            const match = highlightText && c.content && (c.content.includes(highlightText.slice(0, 80)) || highlightText.includes(c.content.slice(0, 80)));
+            return `<div class="source-chunk ${match ? 'chunk-highlight' : ''}" data-chunk="${i}" style="margin-bottom:0.75rem;padding:0.625rem;font-size:0.8125rem;line-height:1.6;border-bottom:1px solid var(--border-subtle)">${esc(c.content)}</div>`;
+        }).join('');
+        textEl.style.display = 'none';
+        openModal('source');
+        refreshIcons();
+        const hi = chunksEl.querySelector('.chunk-highlight') || chunksEl.querySelector('.source-chunk');
+        if (hi) hi.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+    if (isPdf && canEdit) {
+        pdfEl.style.display = 'block';
+        pdfEl.innerHTML = '';
+        Object.entries(d.page_text).sort((a, b) => +a[0] - +b[0]).forEach(([p, t]) => {
+            const wrap = document.createElement('div');
+            wrap.style.marginBottom = '0.75rem';
+            const lbl = document.createElement('label');
+            lbl.style.cssText = 'font-size:0.6875rem;color:var(--outline)';
+            lbl.textContent = `Page ${p}`;
+            const ta = document.createElement('textarea');
+            ta.className = 'input pdf-page-edit';
+            ta.dataset.page = p;
+            ta.rows = 6;
+            ta.style.cssText = 'width:100%;font-size:0.8125rem';
+            ta.value = t;
+            wrap.appendChild(lbl);
+            wrap.appendChild(ta);
+            pdfEl.appendChild(wrap);
+        });
+    } else if (canEdit) {
+        textEl.style.display = 'block';
+        textEl.value = (d.chunks || []).map(c => c.content).join('\n\n');
+    } else {
+        textEl.style.display = 'block'; textEl.readOnly = true;
+        textEl.value = (d.chunks || []).map(c => c.content).join('\n\n');
+        saveBtn.style.display = 'none';
+    }
+    openModal('source');
+    refreshIcons();
+}
+async function saveSourceContent() {
+    if (!currentSourceId) return;
+    const st = document.getElementById('sourceViewerStatus');
+    st.innerHTML = '<div class="status-msg status-loading">Re-indexing...</div>';
+    let body = {};
+    const pdfPages = document.querySelectorAll('.pdf-page-edit');
+    if (pdfPages.length) {
+        const page_text = {};
+        pdfPages.forEach(ta => { page_text[ta.dataset.page] = ta.value; });
+        body = { content: Object.values(page_text).join('\n\n'), page_text };
+    } else {
+        body = { content: document.getElementById('sourceEditorText').value };
+    }
+    try {
+        const r = await fetch(`${API}/api/sources/${currentSourceId}/content`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const d = await r.json();
+        st.innerHTML = `<div class="status-msg status-success">✓ Re-indexed (${d.chunks} chunks)</div>`;
+        await loadSources();
+    } catch (e) { st.innerHTML = `<div class="status-msg status-error">✕ ${e.message}</div>`; }
+}
+async function refreshCurrentSource() {
+    if (!currentSourceId) return;
+    await fetch(`${API}/api/sources/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_id: currentSourceId, notebook_id: activeNotebookId }) });
+    await openSourceViewer(currentSourceId); await loadSources();
+}
+async function handleURLSubmit() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) return;
+    const st = document.getElementById('urlStatus');
+    st.innerHTML = '<div class="status-msg status-loading">Scraping...</div>';
+    try {
+        const r = await fetch(`${API}/api/url`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: [url], notebook_id: activeNotebookId }) });
+        const d = await r.json();
+        const jobIds = d.job_ids || [];
+        if (!jobIds.length) { st.innerHTML = '<div class="status-msg status-error">No jobs started</div>'; return; }
+        document.getElementById('urlInput').value = '';
+        pollIngestJobs(jobIds, st);
+    } catch (e) { st.innerHTML = `<div class="status-msg status-error">${e.message}</div>`; }
+}
+async function handleYouTubeSubmit() {
+    const url = document.getElementById('youtubeInput').value.trim();
+    if (!url) return;
+    const st = document.getElementById('youtubeStatus');
+    st.innerHTML = '<div class="status-msg status-loading">Extracting...</div>';
+    try {
+        const r = await fetch(`${API}/api/youtube`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, notebook_id: activeNotebookId }) });
+        const d = await r.json();
+        const jobIds = d.job_ids || [];
+        if (!jobIds.length) { st.innerHTML = '<div class="status-msg status-error">No jobs started</div>'; return; }
+        document.getElementById('youtubeInput').value = '';
+        pollIngestJobs(jobIds, st);
+    } catch (e) { st.innerHTML = `<div class="status-msg status-error">${e.message}</div>`; }
+}
 
-// ─── Utils ─────────────────────────────────────────
-// Store citation data globally for tooltip lookups
 window._citationData = {};
 let _citationCounter = 0;
 
 function formatResponse(text, sources) {
     let html = esc(text);
     html = html.replace(/\[(\d+)\]/g, (match, num) => {
-        const idx = parseInt(num) - 1;
-        const src = sources?.[idx];
         const cid = 'c' + (++_citationCounter);
+        const src = sources?.find(s => s.reference === `[${num}]`) || sources?.[parseInt(num) - 1];
         if (src) {
-            window._citationData[cid] = { file: src.source_file || 'Unknown', page: src.page_number, text: src.text || '' };
+            window._citationData[cid] = {
+                file: src.source_file || 'Unknown',
+                page: src.page_number,
+                text: src.text || '',
+                source_id: src.source_id || null,
+            };
             return `<span class="citation-ref" data-cid="${cid}" onmouseenter="showCitation(event,'${cid}')" onmouseleave="hideCitation()">${num}</span>`;
         }
         return `<span class="citation-ref">${num}</span>`;
@@ -672,26 +1786,1060 @@ function formatResponse(text, sources) {
     return html;
 }
 
+function handleCitationClick(e) {
+    const ref = e.target.closest('.citation-ref');
+    if (ref?.dataset.cid) jumpToCitation(ref.dataset.cid);
+}
+
+async function jumpToCitation(cid) {
+    hideCitation();
+    const data = window._citationData[cid];
+    if (!data) return;
+    let sourceId = data.source_id;
+    if (!sourceId) {
+        const match = sources.find(s => s.name === data.file);
+        sourceId = match?.id;
+    }
+    if (!sourceId) { alert('Source not found: ' + data.file); return; }
+    await openSourceViewer(sourceId, data.text);
+}
+
+function renderOnboarding() {
+    const wrap = document.getElementById('onboardingWrap');
+    if (!wrap) return;
+    if (localStorage.getItem(ONBOARDING_KEY) || !activeNotebookId) { wrap.innerHTML = ''; return; }
+    if (sources.length > 0 || chatHistory.length > 0) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = `<div class="onboarding-card">
+        <button class="btn btn-ghost btn-sm onboarding-dismiss" onclick="dismissOnboarding()"><span class="material-symbols-outlined" style="font-size:16px">close</span></button>
+        <h4>Welcome to CarnetLM</h4>
+        <div class="onboarding-steps">
+            <div class="onboarding-step"><span class="onboarding-step-num">1</span> Add a source — file, URL, YouTube, or paste text</div>
+            <div class="onboarding-step"><span class="onboarding-step-num">2</span> Ask a question in Chat for cited answers</div>
+            <div class="onboarding-step"><span class="onboarding-step-num">3</span> Try the Editor for rich documents with AI assist</div>
+        </div>
+        <button class="btn btn-soft btn-sm" onclick="openModal('upload')"><span class="material-symbols-outlined" style="font-size:16px">upload_file</span> Add your first source</button>
+    </div>`;
+    refreshIcons(wrap);
+}
+
+function dismissOnboarding() {
+    localStorage.setItem(ONBOARDING_KEY, '1');
+    const wrap = document.getElementById('onboardingWrap');
+    if (wrap) wrap.innerHTML = '';
+}
+
+async function openSettings() {
+    openModal('settings');
+    refreshIcons();
+    try {
+        const [models, chunking, discover, health, tts, perf] = await Promise.all([
+            fetch(`${API}/api/models`).then(r => r.json()),
+            fetch(`${API}/api/settings/chunking?notebook_id=${activeNotebookId || 1}`).then(r => r.json()),
+            fetch(`${API}/api/settings/discover?notebook_id=${activeNotebookId || 1}`).then(r => r.json()),
+            fetch(`${API}/api/health`).then(r => r.json()),
+            fetch(`${API}/api/tts/health`).then(r => r.json()),
+            fetch(`${API}/api/settings/performance`).then(r => r.json()),
+        ]);
+        const active = models.active_provider === 'gemini' ? 'gemini-2.5-flash' : models.active;
+        const ctx = models.context_size || '—';
+        document.getElementById('settingsModelInfo').textContent = `${active || 'None'} · ${models.active_provider || '—'} · ${ctx} tokens`;
+        const preset = chunking.preset || chunking.chunk_preset || 'auto';
+        document.getElementById('settingsChunkPreset').value = preset;
+        document.getElementById('settingsIngestMode').value = chunking.ingest_mode || 'quality';
+        document.getElementById('settingsDiscoverEnabled').checked = !!discover.enabled;
+        document.getElementById('settingsDiscoverAutoSearch').checked = !!discover.auto_on_topic;
+        document.getElementById('settingsDiscoverProvider').value = discover.provider || 'duckduckgo';
+        document.getElementById('settingsDiscoverApiKey').value = discover.api_key || '';
+        document.getElementById('settingsDiscoverMax').value = discover.max_results || 8;
+        document.getElementById('settingsPerformanceMode').value = perf.mode || 'fast';
+        discoverEnabled = !!discover.enabled;
+        updateDiscoverButton();
+        document.getElementById('settingsTtsInfo').textContent = tts.available
+            ? `Orpheus TTS available${tts.voice ? ' · ' + tts.voice : ''}`
+            : 'Browser speech synthesis fallback';
+        const llm = health.llm || {};
+        document.getElementById('settingsHealth').innerHTML = [
+            { label: 'Ollama', ok: llm.ollama?.available },
+            { label: 'Milvus', ok: health.milvus?.available },
+            { label: 'SQLite', ok: health.memory?.available },
+            { label: 'TTS', ok: tts.available },
+        ].map(h => `<div class="health-dot ${h.ok ? 'ok' : 'bad'}"><span class="dot"></span>${h.label}</div>`).join('');
+    } catch (e) {
+        document.getElementById('settingsModelInfo').textContent = 'Failed to load settings';
+    }
+}
+
+async function saveChunkPreset() {
+    if (!activeNotebookId) { alert('Select a notebook first'); return; }
+    const preset = document.getElementById('settingsChunkPreset').value;
+    const ingest_mode = document.getElementById('settingsIngestMode').value;
+    await fetch(`${API}/api/settings/chunking`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notebook_id: activeNotebookId, preset, ingest_mode }),
+    });
+    alert('Ingest settings saved');
+}
+
+async function saveDiscoverSettings() {
+    if (!activeNotebookId) { alert('Select a notebook first'); return; }
+    const body = {
+        notebook_id: activeNotebookId,
+        enabled: document.getElementById('settingsDiscoverEnabled').checked,
+        auto_on_topic: document.getElementById('settingsDiscoverAutoSearch').checked,
+        provider: document.getElementById('settingsDiscoverProvider').value,
+        api_key: document.getElementById('settingsDiscoverApiKey').value,
+        max_results: parseInt(document.getElementById('settingsDiscoverMax').value, 10) || 8,
+    };
+    await fetch(`${API}/api/settings/discover`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    discoverEnabled = body.enabled;
+    updateDiscoverButton();
+    alert('Discovery settings saved');
+}
+
+async function savePerformanceMode() {
+    const mode = document.getElementById('settingsPerformanceMode').value;
+    try {
+        await fetch(`${API}/api/settings/performance`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+        });
+        performanceMode = mode;
+        updatePerfToggleUI();
+        showToast('Performance mode saved', 'info');
+    } catch (e) {
+        showToast('Failed to save setting', 'error');
+    }
+}
+
+async function updateDiscoverButton() {
+    const btn = document.getElementById('discoverBtn');
+    if (!btn || !activeNotebookId) return;
+    try {
+        const d = await fetch(`${API}/api/settings/discover?notebook_id=${activeNotebookId}`).then(r => r.json());
+        discoverEnabled = !!d.enabled;
+    } catch { discoverEnabled = false; }
+    btn.style.display = discoverEnabled ? '' : 'none';
+}
+
+function openDiscoverModal() {
+    if (!discoverEnabled) { alert('Enable Discover in Settings first'); return; }
+    discoverCandidates = [];
+    document.getElementById('discoverQuery').value = '';
+    document.getElementById('discoverResults').innerHTML = '';
+    document.getElementById('discoverStatus').innerHTML = '';
+    openModal('discover');
+}
+
+async function runDiscoverSearch() {
+    const st = document.getElementById('discoverStatus');
+    const q = document.getElementById('discoverQuery').value.trim();
+    st.innerHTML = '<div class="status-msg status-loading">Searching...</div>';
+    try {
+        const r = await fetch(`${API}/api/discover/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notebook_id: activeNotebookId, query: q || null }),
+        });
+        const d = await r.json();
+        if (!r.ok) { st.innerHTML = `<div class="status-msg status-error">${esc(d.detail || 'Search failed')}</div>`; return; }
+        discoverCandidates = d.candidates || [];
+        if (d.query) document.getElementById('discoverQuery').value = d.query;
+        st.innerHTML = `<div class="status-msg status-success">${discoverCandidates.length} results for "${esc(d.query || q)}"</div>`;
+        document.getElementById('discoverResults').innerHTML = discoverCandidates.map((c, i) =>
+            `<label style="display:block;border:1px solid var(--border-subtle);padding:0.625rem;margin-bottom:0.5rem;font-size:0.8125rem;cursor:pointer;border-radius:var(--radius)">
+                <input type="checkbox" class="discover-chk" value="${esc(c.url)}" checked>
+                <strong>${esc(c.title || c.url)}</strong>
+                <div style="color:var(--outline);font-size:0.75rem">${esc(c.domain || '')}</div>
+                <div style="margin-top:0.25rem;color:var(--secondary)">${esc((c.snippet || '').slice(0, 180))}</div>
+            </label>`
+        ).join('') || '<div>No results — try a different query</div>';
+    } catch (e) {
+        st.innerHTML = `<div class="status-msg status-error">${esc(e.message)}</div>`;
+    }
+}
+
+async function ingestSelectedDiscover() {
+    const urls = [...document.querySelectorAll('.discover-chk:checked')].map(c => c.value);
+    if (!urls.length) { alert('Select at least one URL'); return; }
+    const st = document.getElementById('discoverStatus');
+    st.innerHTML = '<div class="status-msg status-loading">Starting ingest...</div>';
+    try {
+        const r = await fetch(`${API}/api/discover/ingest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notebook_id: activeNotebookId, urls }),
+        });
+        const d = await r.json();
+        const jobIds = d.job_ids || [];
+        if (!jobIds.length) { st.innerHTML = '<div class="status-msg status-error">No jobs started</div>'; return; }
+        pollIngestJobs(jobIds, st);
+    } catch (e) {
+        st.innerHTML = `<div class="status-msg status-error">${esc(e.message)}</div>`;
+    }
+}
+
 function showCitation(event, cid) {
     const data = window._citationData[cid];
     if (!data) return;
     const tt = document.getElementById('citationTooltip');
-    document.getElementById('ctHeader').textContent = data.file + (data.page ? ' · Page ' + data.page : '');
+    document.getElementById('ctHeader').textContent = data.file + (data.page ? ' · PAGE ' + data.page : '');
     document.getElementById('ctText').textContent = data.text || 'Source text not available';
     const rect = event.target.getBoundingClientRect();
-    // Position above the citation badge
-    tt.style.left = Math.max(8, Math.min(rect.left - 140, window.innerWidth - 360)) + 'px';
-    tt.style.top = Math.max(8, rect.top - 210) + 'px';
+    const tooltipHeight = 200;
+    const tooltipWidth = 280;
+    
+    // Smart positioning: prefer below, flip above if insufficient space
+    let top = rect.bottom + 8;
+    if (top + tooltipHeight > window.innerHeight - 20) {
+        top = rect.top - tooltipHeight - 8;
+    }
+    
+    let left = rect.left - (tooltipWidth / 2);
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8));
+    
+    tt.style.left = left + 'px';
+    tt.style.top = top + 'px';
     tt.classList.add('visible');
 }
 
-function hideCitation() {
-    document.getElementById('citationTooltip').classList.remove('visible');
-}
+function hideCitation() { document.getElementById('citationTooltip').classList.remove('visible'); }
 function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
-function openModal(type) { closeModals(); document.getElementById(`modal-${type}`).classList.add('active'); ['uploadStatus','urlStatus','youtubeStatus'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='';}); }
+function openModal(type) {
+    closeModals();
+    if (type === 'compare' && !openCompareModal()) return;
+    document.getElementById(`modal-${type}`).classList.add('active');
+    ['uploadStatus','urlStatus','youtubeStatus','clipboardStatus','sourceViewerStatus','discoverStatus'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    refreshIcons(document.getElementById(`modal-${type}`));
+}
 function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.remove('active')); }
 function setupDragDrop() { const d=document.getElementById('fileDrop'); if(!d)return; d.addEventListener('dragover',e=>{e.preventDefault();d.classList.add('dragover');}); d.addEventListener('dragleave',()=>d.classList.remove('dragover')); d.addEventListener('drop',e=>{e.preventDefault();d.classList.remove('dragover');if(e.dataTransfer.files.length)handleFileUpload(e.dataTransfer.files);}); }
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', current);
+    localStorage.setItem('theme', current);
+    const icon = document.getElementById('themeIcon');
+    if (icon) {
+        icon.textContent = current === 'light' ? 'dark_mode' : 'light_mode';
+    }
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const icon = document.getElementById('themeIcon');
+    if (icon) {
+        icon.textContent = current === 'light' ? 'dark_mode' : 'light_mode';
+    }
+});
+
+// Mobile nav helper
+function mobileNavSwitch(target, el) {
+    document.querySelectorAll('.mobile-bottom-nav a').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+    if (target === 'sources') {
+        openModal('upload');
+    } else {
+        switchTab(target);
+    }
+}
+
+function toggleSidebar(side) {
+    const sidebar = document.querySelector(`.sidebar-${side}`);
+    if (!sidebar) return;
+    sidebar.classList.toggle('collapsed');
+    const icon = document.getElementById(`${side}SidebarIcon`);
+    if (icon) {
+        if (side === 'left') {
+            icon.textContent = sidebar.classList.contains('collapsed') ? 'menu' : 'menu_open';
+        } else {
+            icon.textContent = sidebar.classList.contains('collapsed') ? 'vertical_split' : 'dock_to_right';
+        }
+    }
+}
+
+let isGeneratingGuide = false;
+
+async function loadStudyGuide() {
+    if (!activeNotebookId) return;
+    try {
+        const res = await fetch(`${API}/api/summary?notebook_id=${activeNotebookId}`);
+        const data = await res.json();
+        renderStudyGuideView(data);
+    } catch (e) {
+        console.error("Failed to load study guide", e);
+    }
+}
+
+function renderStudyGuideView(data) {
+    const onboarding = document.getElementById('guideOnboarding');
+    const loading = document.getElementById('guideLoading');
+    const workspace = document.getElementById('guideWorkspace');
+    const contentEl = document.getElementById('guideContent');
+    const sourcesListEl = document.getElementById('guideSourcesList');
+
+    onboarding.style.display = 'none';
+    loading.style.display = 'none';
+
+    if (!data || !data.summary) {
+        onboarding.style.display = 'flex';
+        workspace.style.display = 'none';
+        return;
+    }
+
+    workspace.style.display = 'flex';
+    
+    // Parse markdown summary and inline citations with hover support
+    contentEl.innerHTML = formatResponse(data.summary, data.sources_used || []);
+    renderMath(contentEl);
+
+    // Format unique cited sources list for references drawer
+    const citedSources = data.sources_used || [];
+    const uniqueSources = [];
+    const sourceSeen = new Set();
+    citedSources.forEach(s => {
+        if (s.source_file && !sourceSeen.has(s.source_file)) {
+            sourceSeen.add(s.source_file);
+            uniqueSources.push(s);
+        }
+    });
+
+    if (uniqueSources.length > 0) {
+        document.getElementById('guideSourcesPanel').style.display = 'flex';
+        sourcesListEl.innerHTML = uniqueSources.map((s, idx) => `
+            <div class="guide-source-item" onclick="openSourceViewerByName('${esc(s.source_file)}')">
+                <span class="guide-source-num">${idx + 1}</span>
+                <span class="guide-source-name" title="${esc(s.source_file)}">${esc(s.source_file)}</span>
+            </div>
+        `).join('');
+    } else {
+        document.getElementById('guideSourcesPanel').style.display = 'none';
+    }
+}
+
+function openSourceViewerByName(name) {
+    const src = sources.find(s => s.name === name || s.display_name === name);
+    if (src) {
+        openSourceViewer(src.id);
+    } else {
+        showToast(`Source '${name}' not found in active notebook`, 'warning');
+    }
+}
+
+async function generateStudyGuide(isRegenerate) {
+    if (!activeNotebookId) return;
+    if (isGeneratingGuide) return;
+    
+    if (isRegenerate && !await customConfirm('Regenerate the study guide? The existing version will be replaced.')) return;
+    
+    const onboarding = document.getElementById('guideOnboarding');
+    const loading = document.getElementById('guideLoading');
+    const workspace = document.getElementById('guideWorkspace');
+    const loadingText = document.getElementById('guideLoadingText');
+
+    onboarding.style.display = 'none';
+    workspace.style.display = 'none';
+    loading.style.display = 'flex';
+    isGeneratingGuide = true;
+
+    // Premium progress steps animation
+    const steps = [
+        "Analyzing documents...",
+        "Synthesizing key topics...",
+        "Connecting related themes...",
+        "Structuring study outlines...",
+        "Finalizing definitions..."
+    ];
+    let stepIdx = 0;
+    loadingText.textContent = steps[0];
+    const timer = setInterval(() => {
+        stepIdx = (stepIdx + 1) % steps.length;
+        loadingText.textContent = steps[stepIdx];
+    }, 4500);
+
+    try {
+        const res = await fetch(`${API}/api/summary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notebook_id: activeNotebookId })
+        });
+        const data = await res.json();
+        clearInterval(timer);
+        
+        if (!res.ok) {
+            throw new Error(data.detail || 'Summary generation failed');
+        }
+        
+        renderStudyGuideView(data);
+        showToast("Study guide generated successfully", "success");
+    } catch (e) {
+        clearInterval(timer);
+        showToast(e.message, 'error');
+        // Restore previous guide if present, else onboarding
+        await loadStudyGuide();
+    } finally {
+        isGeneratingGuide = false;
+        loading.style.display = 'none';
+    }
+}
+
+function exportStudyGuide() {
+    const content = document.getElementById('guideContent').innerText;
+    if (!content) {
+        showToast("No content to export", "warning");
+        return;
+    }
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Study_Guide_Notebook_${activeNotebookId}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Study guide exported as Markdown", "info");
+}
+
+function runSummary() {
+    switchTab('guide');
+    const workspace = document.getElementById('guideWorkspace');
+    if (workspace.style.display === 'none') {
+        generateStudyGuide(false);
+    }
+}
+
+// ─── Spaced Repetition Flashcards ────────────────────────────────────────────
+let currentConcepts = [];
+let flashcardViewMode = 'study';
+let activeFlashcardIndex = 0;
+let flashcardFlipped = false;
+let editingConceptId = null;
+
+async function loadKnowledgeGraph() {
+    if (!activeNotebookId) return;
+    const container = document.getElementById('graphContainer');
+    // Keep placeholder spinner clean
+    const studyView = document.getElementById('flashcardStudyView');
+    studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:0.6"><div class="loading-spinner" style="margin-right:10px"></div> Loading study deck...</div>';
+
+    try {
+        const r = await fetch(`${API}/api/concepts?notebook_id=${activeNotebookId}`);
+        const data = await r.json();
+        currentConcepts = data.concepts || [];
+        renderConceptBoard();
+    } catch (e) {
+        console.error(e);
+        studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red-primary)"><span class="material-symbols-outlined" style="margin-right:5px">error</span> Failed to load study deck</div>';
+    }
+}
+
+function setFlashcardView(mode) {
+    flashcardViewMode = mode;
+    const btnStudy = document.getElementById('btnStudyMode');
+    const btnManage = document.getElementById('btnManageMode');
+    const studyView = document.getElementById('flashcardStudyView');
+    const manageView = document.getElementById('flashcardManageView');
+
+    if (mode === 'study') {
+        btnStudy.style.background = 'var(--primary)';
+        btnStudy.style.color = '#fff';
+        btnManage.style.background = 'transparent';
+        btnManage.style.color = 'var(--text-secondary)';
+        studyView.style.display = 'flex';
+        manageView.style.display = 'none';
+    } else {
+        btnManage.style.background = 'var(--primary)';
+        btnManage.style.color = '#fff';
+        btnStudy.style.background = 'transparent';
+        btnStudy.style.color = 'var(--text-secondary)';
+        studyView.style.display = 'none';
+        manageView.style.display = 'block';
+    }
+    renderConceptBoard();
+}
+
+function flipFlashcard() {
+    flashcardFlipped = !flashcardFlipped;
+    renderConceptBoard();
+}
+
+function changeFlashcardIndex(offset) {
+    const target = activeFlashcardIndex + offset;
+    if (target >= 0 && target < currentConcepts.length) {
+        activeFlashcardIndex = target;
+        flashcardFlipped = false;
+        renderConceptBoard();
+    }
+}
+
+async function gradeFlashcard(cardId, grade) {
+    const concept = currentConcepts.find(c => c.id === cardId);
+    if (concept) {
+        if (grade === 'easy') {
+            concept.sort_order = Math.min(5, (concept.sort_order || 1) + 1);
+        } else if (grade === 'hard') {
+            concept.sort_order = 1;
+        }
+    }
+
+    flashcardFlipped = false;
+    if (activeFlashcardIndex + 1 < currentConcepts.length) {
+        activeFlashcardIndex++;
+    } else {
+        activeFlashcardIndex = 0;
+    }
+
+    renderConceptBoard();
+
+    try {
+        await fetch(`${API}/api/concepts/grade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                concept_id: cardId,
+                grade: grade
+            })
+        });
+    } catch (e) {
+        console.error("Failed to grade card", e);
+    }
+}
+
+function resetStudySession() {
+    activeFlashcardIndex = 0;
+    flashcardFlipped = false;
+    renderConceptBoard();
+}
+
+function renderConceptBoard() {
+    const studyView = document.getElementById('flashcardStudyView');
+    const manageView = document.getElementById('flashcardManageView');
+
+    if (!currentConcepts.length) {
+        const emptyHtml = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.6;padding:2rem;text-align:center;">
+                <span class="material-symbols-outlined" style="font-size:36px;margin-bottom:0.5rem">card_membership</span>
+                <h4>Your Flashcard Deck is Empty</h4>
+                <p style="font-size:0.875rem;margin-top:0.25rem">Ask AI to generate flashcards or add new ones manually above.</p>
+            </div>
+        `;
+        studyView.innerHTML = emptyHtml;
+        manageView.innerHTML = emptyHtml;
+        return;
+    }
+
+    if (flashcardViewMode === 'study') {
+        if (activeFlashcardIndex >= currentConcepts.length) {
+            activeFlashcardIndex = 0;
+        }
+        const card = currentConcepts[activeFlashcardIndex];
+
+        // Format link pills
+        const linkPills = card.links.map(l => `<span class="concept-link-pill active" style="cursor:default">${l}</span>`).join('');
+
+        studyView.innerHTML = `
+            <div class="flashcard-scene" onclick="flipFlashcard()">
+                <div class="flashcard-card ${flashcardFlipped ? 'is-flipped' : ''}">
+                    <!-- Front -->
+                    <div class="flashcard-face flashcard-face-front">
+                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--primary);font-weight:700;letter-spacing:0.05em;">Recall Question</div>
+                        <div class="flashcard-text">${escapeHtml(card.title)}</div>
+                        <div style="font-size:0.75rem;opacity:0.4;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:12px">touch_app</span> Click card to flip</div>
+                    </div>
+                    <!-- Back -->
+                    <div class="flashcard-face flashcard-face-back">
+                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--green-primary);font-weight:700;letter-spacing:0.05em;">Explanation / Answer</div>
+                        <div class="flashcard-text-back">${escapeHtml(card.explanation)}</div>
+                        <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:0.5rem;width:100%;margin-top:auto;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.4;margin-bottom:0.25rem;">Sources</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:0.25rem">${linkPills || '<span style="font-size:0.7rem;opacity:0.3">None</span>'}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grade Actions (Fades in when flipped) -->
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;margin-top:0.5rem;min-height:90px;opacity: ${flashcardFlipped ? '1' : '0'};pointer-events:${flashcardFlipped ? 'all' : 'none'};transition:opacity 0.2s ease;">
+                <div style="font-size:0.75rem;opacity:0.6;font-weight:500;">How well did you recall this?</div>
+                <div style="display:flex;gap:0.75rem;">
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'hard')" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:0.4rem 1.25rem;border-radius:6px;">Hard</button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fcd34d;padding:0.4rem 1.25rem;border-radius:6px;">Good</button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:0.4rem 1.25rem;border-radius:6px;">Easy</button>
+                </div>
+                <div style="font-size:0.7rem;opacity:0.4;margin-top:0.25rem;">Leitner Box level: ${card.leitner_box || 1} / 5</div>
+            </div>
+
+            <!-- Navigation Controls -->
+            <div style="display:flex;align-items:center;gap:1.5rem;margin-top:1rem;">
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(-1)" ${activeFlashcardIndex === 0 ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;"><span class="material-symbols-outlined" style="font-size:16px">chevron_left</span> Prev</button>
+                <span style="font-size:0.8rem;opacity:0.6;font-weight:500;">Card ${activeFlashcardIndex + 1} of ${currentConcepts.length}</span>
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(1)" ${activeFlashcardIndex + 1 === currentConcepts.length ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;">Next <span class="material-symbols-outlined" style="font-size:16px">chevron_right</span></button>
+            </div>
+        `;
+    } else {
+        // Render static list deck editor with View and Edit modes in a two-column layout
+        let html = `
+            <div class="deck-manage-layout" style="display:flex; width:100%; height:100%; gap:1.5rem; padding:1.5rem; overflow-y:auto; box-sizing:border-box;">
+                <div style="flex:1; min-width:0;">
+                    <div class="concept-grid" style="display:grid !important; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; gap:1.25rem !important; padding:0; background:none; min-height:auto; width:100%;">
+        `;
+        
+        currentConcepts.forEach(c => {
+            const isEditing = (c.id === editingConceptId);
+            
+            const pillsHtml = sources.map(s => {
+                const isActive = c.links.includes(s.name);
+                if (isEditing) {
+                    return `
+                        <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${s.name}')">
+                            ${s.name}
+                        </span>
+                    `;
+                } else {
+                    return isActive ? `
+                        <span class="concept-link-pill active" style="cursor:default">
+                            ${s.name}
+                        </span>
+                    ` : '';
+                }
+            }).join('');
+
+            if (isEditing) {
+                html += `
+                    <div class="concept-card editing" data-id="${c.id}" style="border-color: var(--primary); height: auto; min-height: 250px; width: 100% !important; max-width: 100% !important;">
+                        <div class="concept-card-header">
+                            <input type="text" class="concept-title-input" id="edit-title-${c.id}" value="${escapeHtml(c.title)}" placeholder="Card Question/Term" style="border-bottom: 1px solid var(--primary); background: rgba(255,255,255,0.03); padding: 0.25rem 0.5rem; border-radius: 4px;" />
+                            <button class="concept-delete-btn" onclick="deleteConceptCard(${c.id})">&times;</button>
+                        </div>
+                        <textarea class="concept-explanation-input" id="edit-explanation-${c.id}" placeholder="Card Answer / Definition..." style="border: 1px solid var(--border-subtle); padding: 0.5rem; background: rgba(255, 255, 255, 0.03); min-height: 90px; color: var(--text-primary); font-family: var(--font-body); font-size: 0.85rem; border-radius: 8px; resize: vertical;">${escapeHtml(c.explanation)}</textarea>
+                        <div class="concept-links-section">
+                            <div class="concept-links-title">Linked Sources</div>
+                            <div class="concept-links-pills">
+                                ${pillsHtml || '<div style="font-size:0.75rem;opacity:0.4">No sources uploaded to link</div>'}
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                            <button class="btn btn-xs btn-soft" onclick="cancelEditingCard()" style="font-size:0.7rem;padding:0.25rem 0.5rem;height:24px;">Cancel</button>
+                            <button class="btn btn-xs btn-primary" onclick="saveEditingCard(${c.id})" style="font-size:0.7rem;padding:0.25rem 0.5rem;height:24px;">Save</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="concept-card" data-id="${c.id}" style="cursor: grab; width: 100% !important; max-width: 100% !important;">
+                        <div class="concept-card-header" style="cursor: grab;">
+                            <div class="concept-card-view-title" style="font-weight:700;font-size:0.95rem;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</div>
+                            <button class="concept-delete-btn" onclick="deleteConceptCard(${c.id})">&times;</button>
+                        </div>
+                        <div class="concept-card-view-explanation" style="font-size:0.85rem;color:var(--text-secondary);flex:1;overflow-y:auto;line-height:1.4;margin:0.25rem 0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(c.explanation || "No explanation provided yet. Click Edit to add one.")}</div>
+                        <div class="concept-links-section">
+                            <div class="concept-links-title">Linked Sources</div>
+                            <div class="concept-links-pills">
+                                ${pillsHtml || '<div style="font-size:0.75rem;opacity:0.3">No linked sources</div>'}
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;margin-top:auto;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                            <button class="btn btn-xs btn-soft" onclick="startEditingCard(${c.id})" style="font-size:0.7rem;padding:0.25rem 0.5rem;height:24px;display:inline-flex;align-items:center;gap:0.2rem;"><span class="material-symbols-outlined" style="font-size:12px">edit</span> Edit</button>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        // Add statistics panel
+        const counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+        currentConcepts.forEach(c => {
+            let box = c.leitner_box || 1;
+            if (box < 1) box = 1;
+            if (box > 5) box = 5;
+            counts[box]++;
+        });
+        
+        const colors = { 1: '#ffb4ab', 2: '#ffb77d', 3: '#ffd084', 4: '#c3c7cd', 5: '#88ddcc' };
+        const labels = {
+            1: 'Box 1: New / Hard',
+            2: 'Box 2: Learning',
+            3: 'Box 3: Familiar',
+            4: 'Box 4: Proficient',
+            5: 'Box 5: Mastered'
+        };
+        
+        let statsHtml = [1, 2, 3, 4, 5].map(box => {
+            const count = counts[box];
+            const pct = currentConcepts.length ? (count / currentConcepts.length) * 100 : 0;
+            return `
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-secondary);">
+                        <span>${labels[box]}</span>
+                        <span style="font-weight:700; color:${colors[box]};">${count}</span>
+                    </div>
+                    <div style="width:100%; height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
+                        <div style="width:${pct}%; height:100%; background:${colors[box]}; border-radius:3px; transition:width 0.3s ease;"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        html += `
+                    </div>
+                </div>
+                
+                <!-- Deck Insights Sidebar -->
+                <div class="deck-stats-panel" style="width:300px; display:flex; flex-direction:column; gap:1.25rem; background:var(--surface-container-low); border:1px solid var(--border-subtle); border-radius:12px; padding:1.25rem; height:fit-content; position:sticky; top:0;">
+                    <div style="font-weight:700; font-size:0.875rem; color:var(--text-primary); letter-spacing:0.02em; display:flex; align-items:center; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:0.25rem;">
+                        <span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">analytics</span>
+                        Deck Insights
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-secondary); border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 0.5rem;">
+                        <span>Total Cards</span>
+                        <span style="font-weight:700; color:var(--primary);">${currentConcepts.length}</span>
+                    </div>
+                    
+                    <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                        <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">Leitner Box Distribution</div>
+                        ${statsHtml}
+                    </div>
+                    
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                        <button class="btn btn-sm btn-primary" onclick="setFlashcardView('study')" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">play_arrow</span> Study Now
+                        </button>
+                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(255,180,171,0.2);">
+                            <span class="material-symbols-outlined" style="font-size:14px">restart_alt</span> Reset Progress
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        manageView.innerHTML = html;
+        setupCardDragAndDrop();
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+async function addConceptCard() {
+    if (!activeNotebookId) return;
+    try {
+        const r = await fetch(`${API}/api/concepts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                title: "New Concept",
+                explanation: "",
+                links: []
+            })
+        });
+        if (r.ok) {
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to add concept", e);
+    }
+}
+
+async function updateConceptTitle(id, title) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    concept.title = title;
+    await saveConceptToServer(concept);
+}
+
+async function updateConceptExplanation(id, explanation) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    concept.explanation = explanation;
+    await saveConceptToServer(concept);
+}
+
+async function toggleConceptLink(id, sourceName) {
+    const concept = currentConcepts.find(c => c.id === id);
+    if (!concept) return;
+    const idx = concept.links.indexOf(sourceName);
+    if (idx > -1) {
+        concept.links.splice(idx, 1);
+    } else {
+        concept.links.push(sourceName);
+    }
+    renderConceptBoard();
+    await saveConceptToServer(concept);
+}
+
+async function saveConceptToServer(concept) {
+    try {
+        await fetch(`${API}/api/concepts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: concept.id,
+                notebook_id: activeNotebookId,
+                title: concept.title,
+                explanation: concept.explanation,
+                links: concept.links,
+                x: concept.x,
+                y: concept.y
+            })
+        });
+    } catch (e) {
+        console.error("Failed to update concept on server", e);
+    }
+}
+
+async function generateConceptCard() {
+    if (!activeNotebookId) return;
+    const input = document.getElementById('conceptPromptInput');
+    const btn = document.getElementById('btnGenerateConcept');
+    const promptText = input.value.trim();
+    if (!promptText) return;
+
+    input.disabled = true;
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<div class="loading-spinner" style="width:12px;height:12px;border-width:2px;border-top-color:transparent;margin-right:4px;"></div> Generating...';
+
+    try {
+        const r = await fetch(`${API}/api/concepts/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                prompt: promptText
+            })
+        });
+        if (r.ok) {
+            input.value = "";
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to generate concept card from prompt", e);
+    } finally {
+        input.disabled = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+async function deleteConceptCard(id) {
+    if (!await customConfirm("Are you sure you want to delete this concept card?")) return;
+    try {
+        const r = await fetch(`${API}/api/concepts/${id}`, {
+            method: 'DELETE'
+        });
+        if (r.ok) {
+            loadKnowledgeGraph();
+        }
+    } catch (e) {
+        console.error("Failed to delete concept card", e);
+    }
+}
+
+function startEditingCard(id) {
+    editingConceptId = id;
+    renderConceptBoard();
+}
+
+function cancelEditingCard() {
+    editingConceptId = null;
+    loadKnowledgeGraph();
+}
+
+async function saveEditingCard(id) {
+    const titleVal = document.getElementById(`edit-title-${id}`).value.trim();
+    const explanationVal = document.getElementById(`edit-explanation-${id}`).value.trim();
+    
+    if (!titleVal) {
+        showToast("Card front/question cannot be empty", "warning");
+        return;
+    }
+    
+    const concept = currentConcepts.find(c => c.id === id);
+    if (concept) {
+        concept.title = titleVal;
+        concept.explanation = explanationVal;
+        await saveConceptToServer(concept);
+    }
+    
+    editingConceptId = null;
+    renderConceptBoard();
+    showToast("Card updated", "info");
+}
+
+let draggedCardId = null;
+
+function setupCardDragAndDrop() {
+    const grid = document.querySelector('.concept-grid');
+    if (!grid) return;
+    
+    const cards = grid.querySelectorAll('.concept-card:not(.editing)');
+    
+    cards.forEach(card => {
+        card.setAttribute('draggable', 'true');
+        
+        card.addEventListener('dragstart', (e) => {
+            draggedCardId = parseInt(card.getAttribute('data-id'));
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => card.style.opacity = '0.4', 0);
+        });
+        
+        card.addEventListener('dragend', async () => {
+            card.classList.remove('dragging');
+            card.style.opacity = '1';
+            
+            const newOrder = Array.from(grid.querySelectorAll('.concept-card')).map(el => parseInt(el.getAttribute('data-id')));
+            currentConcepts.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+            
+            try {
+                await fetch(`${API}/api/concepts/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        notebook_id: activeNotebookId,
+                        concept_ids: newOrder
+                    })
+                });
+            } catch (err) {
+                console.error("Failed to save reordered cards:", err);
+            }
+            
+            draggedCardId = null;
+        });
+        
+        card.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+        
+        card.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            if (draggedCardId === null) return;
+            const targetId = parseInt(card.getAttribute('data-id'));
+            if (draggedCardId === targetId) return;
+            
+            const draggingEl = grid.querySelector(`.concept-card[data-id="${draggedCardId}"]`);
+            if (!draggingEl) return;
+            
+            const allCards = Array.from(grid.querySelectorAll('.concept-card'));
+            const draggingIndex = allCards.indexOf(draggingEl);
+            const targetIndex = allCards.indexOf(card);
+            
+            if (draggingIndex < targetIndex) {
+                grid.insertBefore(draggingEl, card.nextSibling);
+            } else {
+                grid.insertBefore(draggingEl, card);
+            }
+        });
+    });
+}
+
+async function resetLeitnerProgress() {
+    if (!activeNotebookId) return;
+    if (!await customConfirm('Are you sure you want to reset all Leitner study progress for this deck? All cards will go back to Box 1.')) return;
+    
+    try {
+        const r = await fetch(`${API}/api/notebooks/${activeNotebookId}/concepts/reset-progress`, {
+            method: 'POST'
+        });
+        if (r.ok) {
+            showToast('Leitner progress reset successfully', 'info');
+            await loadKnowledgeGraph();
+        } else {
+            showToast('Failed to reset progress', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Error resetting progress', 'error');
+    }
+}
+
 </script>
+
+<!-- ═══ Animated Blob Background Script ═══ -->
+<script>
+(function() {
+    const container = document.getElementById('blobContainer');
+    if (!container) return;
+
+    const BLOBS_COUNT = 4;
+    const state = {
+        mouse: { x: 0, y: 0, targetX: 0, targetY: 0 },
+        blobs: [],
+        width: window.innerWidth,
+        height: window.innerHeight
+    };
+
+    const colors = ['#d97706', '#a38c7c', '#554336', '#ffb77d'];
+
+    for (let i = 0; i < BLOBS_COUNT; i++) {
+        const el = document.createElement('div');
+        el.className = 'blob';
+        const size = 300 + Math.random() * 400;
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.style.background = colors[i % colors.length];
+        el.style.opacity = '0.15';
+
+        const blob = {
+            el,
+            x: Math.random() * state.width,
+            y: Math.random() * state.height,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: (Math.random() - 0.5) * 1.5,
+            size,
+            factor: 0.01 + Math.random() * 0.02
+        };
+
+        state.blobs.push(blob);
+        container.appendChild(el);
+    }
+
+    function update() {
+        state.mouse.x += (state.mouse.targetX - state.mouse.x) * 0.05;
+        state.mouse.y += (state.mouse.targetY - state.mouse.y) * 0.05;
+
+        state.blobs.forEach((blob, i) => {
+            blob.x += blob.vx;
+            blob.y += blob.vy;
+
+            if (blob.x < -blob.size) blob.vx *= -1;
+            if (blob.x > state.width) blob.vx *= -1;
+            if (blob.y < -blob.size) blob.vy *= -1;
+            if (blob.y > state.height) blob.vy *= -1;
+
+            const dx = (state.mouse.x - state.width / 2) * blob.factor * (i + 1);
+            const dy = (state.mouse.y - state.height / 2) * blob.factor * (i + 1);
+
+            blob.el.style.transform = `translate(${blob.x + dx}px, ${blob.y + dy}px)`;
+        });
+
+        requestAnimationFrame(update);
+    }
+
+    window.addEventListener('mousemove', (e) => {
+        state.mouse.targetX = e.clientX;
+        state.mouse.targetY = e.clientY;
+    });
+
+    window.addEventListener('resize', () => {
+        state.width = window.innerWidth;
+        state.height = window.innerHeight;
+    });
+
+    update();
+})();
+</script>
+
 </body>
 </html>

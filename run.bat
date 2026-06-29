@@ -1,13 +1,13 @@
 @echo off
-title DocChat
+title CarnetLM
 cd /d "%~dp0"
 
 echo.
-echo  ____             ____ _           _
-echo ^|  _ \  ___   ___/ ___^| ^|__   __ _^| ^|_
-echo ^| ^| ^| ^|/ _ \ / __^| ^|   ^| '_ \ / _` ^| __^|
-echo ^| ^|_^| ^| (_) ^| (__^| ^|___^| ^| ^| ^| (_^| ^| ^|_
-echo ^|____/ \___/ \___\____^|_^| ^|_^|\__,_^\__^|
+echo   ____                      _   _     __  __ 
+echo  / ___|__ _ _ __ _ __   ___| |_| |   |  \/  |
+echo | |   / _` | '__| '_ \ / _ \ __| |   | |\/| |
+echo | |__| (_| | |  | | | |  __/ |_| |___| |  | |
+echo  \____\__,_|_|  |_| |_|\___|\__|\_____|_|  |_|
 echo.
 
 :: Check if uv is available
@@ -25,15 +25,26 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000.*LISTENING" 2^>nul') d
     taskkill /PID %%a /F >nul 2>&1
 )
 
-echo Starting DocChat on http://localhost:8000
+:: Sync/Install all dependencies declared in pyproject.toml
+echo Syncing and installing project dependencies...
+uv sync
+if %ERRORLEVEL% neq 0 (
+    echo [WARNING] 'uv sync' failed. Trying fallback 'uv pip install -r requirements.txt'...
+    uv pip install -r requirements.txt
+)
+echo.
+
+echo Starting CarnetLM on http://localhost:8000
 echo Press Ctrl+C to stop.
 echo.
 
-:: Start the server (stays open so you can see output)
+:: Run background browser opener
+start /b cmd /c "timeout /t 3 >nul && start "" http://localhost:8000"
+
+:: Start the server in the foreground
 uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
-:: If server exits, show the error and wait
 echo.
-echo [DocChat stopped]
+echo [CarnetLM stopped]
 echo.
 pause
