@@ -1,5 +1,5 @@
 """
-DocChat — FastAPI Backend
+CarnetLM — FastAPI Backend
 
 Multi-notebook document Q&A with notes, AI writing assist, and export.
 """
@@ -142,11 +142,29 @@ def _apply_notebook_chunking(notebook_id: int, preset_override: Optional[str] = 
     return chunking
 
 
+def _process_image_base64_in_request(request: "ChatRequest"):
+    if request.image_base64:
+        try:
+            import base64
+            from src.document_processing.ocr_service import extract_text_from_image
+            header, encoded = request.image_base64.split(",", 1) if "," in request.image_base64 else ("", request.image_base64)
+            img_bytes = base64.b64decode(encoded)
+            ocr_text = extract_text_from_image(img_bytes)
+            if ocr_text:
+                request.query = f"[Image OCR Context]:\n{ocr_text}\n\n[Question/Task]:\n{request.query}"
+                logger.info(f"Chat Image OCR successfully extracted {len(ocr_text)} characters.")
+            else:
+                logger.warning("Chat Image OCR returned empty text.")
+        except Exception as e:
+            logger.error(f"Failed to process chat image base64 OCR: {e}")
+
+
 # ─── Pydantic Models ───────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     query: str
     notebook_id: int = 1
+    image_base64: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -163,9 +181,14 @@ class YouTubeRequest(BaseModel):
 
 class NotebookCreate(BaseModel):
     name: str
+    is_private: Optional[int] = 0
+    password_hash: Optional[str] = None
 
 class NotebookRename(BaseModel):
     name: str
+
+class NotebookVerify(BaseModel):
+    password_hash: str
 
 class NoteCreate(BaseModel):
     title: str
@@ -259,6 +282,9 @@ class NoteIndexRequest(BaseModel):
 
 class PerformanceSettingsUpdate(BaseModel):
     mode: str = "fast"
+
+
+
 
 
 # ─── App ───────────────────────────────────────────────────────────────────────
@@ -489,8 +515,19 @@ async def list_notebooks():
 async def create_notebook(request: NotebookCreate):
     if not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
-    nb_id = _memory.create_notebook(request.name)
+    nb_id = _memory.create_notebook(
+        name=request.name,
+        is_private=request.is_private,
+        password_hash=request.password_hash
+    )
     return {"id": nb_id, "name": request.name, "status": "ok"}
+
+@app.post("/api/notebooks/{notebook_id}/verify")
+async def verify_notebook_password(notebook_id: int, request: NotebookVerify):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    success = _memory.verify_notebook_password(notebook_id, request.password_hash)
+    return {"success": success}
 
 @app.put("/api/notebooks/{notebook_id}")
 async def rename_notebook(notebook_id: int, request: NotebookRename):
@@ -501,9 +538,17 @@ async def rename_notebook(notebook_id: int, request: NotebookRename):
     raise HTTPException(status_code=404, detail="Notebook not found")
 
 @app.delete("/api/notebooks/{notebook_id}")
-async def delete_notebook(notebook_id: int):
+async def delete_notebook(notebook_id: int, password_hash: Optional[str] = Query(None)):
     if not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
+
+    # If notebook is private, check password hash
+    notebooks = _memory.list_notebooks()
+    target = next((n for n in notebooks if n["id"] == notebook_id), None)
+    if target and target.get("is_private"):
+        if not password_hash or target.get("password_hash") != password_hash:
+            raise HTTPException(status_code=403, detail="Invalid password for private notebook")
+
     if _ingest_jobs:
         _ingest_jobs.cancel_notebook_jobs(notebook_id)
     if _memory.delete_notebook(notebook_id):
@@ -873,6 +918,8 @@ async def chat(request: ChatRequest):
     if not _rag_generator:
         raise HTTPException(status_code=503, detail="Not initialized")
 
+    _process_image_base64_in_request(request)
+
     conv_context = _memory.get_conversation_context(
         notebook_id=request.notebook_id, max_turns=_conversation_turns(),
     )
@@ -897,6 +944,8 @@ async def chat_stream(request: ChatRequest):
     """Stream RAG response via Server-Sent Events."""
     if not _rag_generator or not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
+
+    _process_image_base64_in_request(request)
 
     # Auto-discover: fetch relevant websites if enabled
     discover_settings = _memory.get_discover_settings(request.notebook_id)
@@ -990,10 +1039,21 @@ async def clear_history(notebook_id: int = Query(1)):
 
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
 
+@app.get("/api/summary")
+async def get_summary(notebook_id: int = Query(...)):
+    """Fetch saved study guide/summary for a notebook."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    guide = _memory.get_study_guide(notebook_id)
+    if guide:
+        return json.loads(guide)
+    return {"summary": "", "sources_used": []}
+
+
 @app.post("/api/summary")
 async def generate_summary(request: SummaryRequest):
-    """Auto-generate a summary / study guide from all sources."""
-    if not _llm_router or not _vector_db or not _embedding_generator:
+    """Auto-generate and save a structured study guide with inline citations."""
+    if not _llm_router or not _vector_db or not _embedding_generator or not _memory:
         raise HTTPException(status_code=503, detail="Not initialized")
 
     # Get all sources for this notebook
@@ -1014,32 +1074,56 @@ async def generate_summary(request: SummaryRequest):
     if not search_results:
         raise HTTPException(status_code=400, detail="No content found in sources")
 
-    # Build context from retrieved chunks
-    context = "\n\n".join([r["content"] for r in search_results[:15]])
-    source_names = list(set(r["citation"]["source_file"] for r in search_results))
+    # Build context from retrieved chunks with clear reference numbers
+    context_parts = []
+    sources_used = []
+    for i, r in enumerate(search_results[:15]):
+        ref = f"[{i + 1}]"
+        citation = r.get("citation", {})
+        context_parts.append(f"{ref} {r['content']}")
+        sources_used.append({
+            "reference": ref,
+            "source_file": citation.get("source_file", "Unknown"),
+            "source_type": citation.get("source_type", "unknown"),
+            "page_number": citation.get("page_number"),
+            "chunk_id": r.get("id", ""),
+            "chunk_index": citation.get("chunk_index"),
+            "relevance_score": r.get("score", r.get("rrf_score", 0)),
+            "text": r["content"][:300],
+        })
+
+    context = "\n\n".join(context_parts)
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Based on the following source material, create a comprehensive study guide with:
-1. **Executive Summary** (2-3 paragraphs)
-2. **Key Topics** (bullet points with brief explanations)
-3. **Important Details** (notable facts, figures, or concepts)
-4. **Connections** (how different topics relate to each other)
+            prompt=f"""Based on the following source material, create a comprehensive study guide.
+Cite the sources you use using their numbers, e.g. [1], [2], etc.
+
+Rules:
+1. Every major fact, concept, or summary MUST be grounded in the context and cite the corresponding source numbers, e.g. [1].
+2. Structure the guide with the following sections:
+   - **Executive Summary**: A high-level overview of the notebook materials.
+   - **Key Concepts**: Core terms, definitions, and theories, citing source numbers.
+   - **Important Details**: Facts, figures, or notable connections.
 
 Source Material:
-{context}
-
-Sources used: {', '.join(source_names)}""",
-            system_prompt="You are an expert study guide creator. Create clear, organized, and comprehensive summaries.",
+{context}""",
+            system_prompt="You are an expert study guide creator. Create structured summaries with clear source citations [1], [2], etc.",
             temperature=0.3,
             max_tokens=2000,
         )
-        return {
+        
+        guide_data = {
             "summary": result.content,
-            "sources_used": source_names,
+            "sources_used": sources_used,
             "provider": result.provider,
             "model": result.model,
         }
+        
+        # Save to database
+        _memory.save_study_guide(request.notebook_id, json.dumps(guide_data))
+        return guide_data
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1171,9 +1255,9 @@ async def export_chat(request: ChatExportRequest):
         raise HTTPException(status_code=400, detail="No chat history to export")
 
     if request.format == "md":
-        lines = ["# DocChat — Chat Export\n"]
+        lines = ["# CarnetLM — Chat Export\n"]
         for msg in history:
-            role = "**You**" if msg["role"] == "user" else "**DocChat**"
+            role = "**You**" if msg["role"] == "user" else "**CarnetLM**"
             lines.append(f"### {role}\n")
             lines.append(msg["content"] + "\n")
             if msg.get("sources") and msg["role"] == "assistant":
@@ -1187,7 +1271,7 @@ async def export_chat(request: ChatExportRequest):
     else:
         lines = []
         for msg in history:
-            role = "You" if msg["role"] == "user" else "DocChat"
+            role = "You" if msg["role"] == "user" else "CarnetLM"
             lines.append(f"{role}:")
             lines.append(msg["content"])
             lines.append("")
@@ -1213,8 +1297,11 @@ async def compare_sources(request: CompareRequest):
     if len(request.source_names) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 sources to compare")
 
-    # Get chunks from each source using exact query (not semantic search)
-    source_contents = {}
+    # Get chunks from each source and build unified reference context
+    context_parts = []
+    sources_used = []
+    cid = 1
+    
     for name in request.source_names:
         results = _vector_db.query_by_source(
             source_file=name,
@@ -1226,29 +1313,49 @@ async def compare_sources(request: CompareRequest):
             x.get("citation", {}).get("page_number") or 0,
             x.get("citation", {}).get("chunk_index", 0),
         ))
-        source_contents[name] = "\n".join([r["content"][:500] for r in results[:5]])
+        
+        for r in results[:5]:  # limit to top 5 representative chunks per source
+            ref = f"[{cid}]"
+            citation = r.get("citation", {})
+            context_parts.append(f"{ref} (Source: {name}):\n{r['content']}")
+            sources_used.append({
+                "reference": ref,
+                "source_file": name,
+                "source_type": citation.get("source_type", "unknown"),
+                "page_number": citation.get("page_number"),
+                "chunk_id": r.get("id", ""),
+                "chunk_index": citation.get("chunk_index"),
+                "relevance_score": r.get("score", r.get("rrf_score", 0)),
+                "text": r["content"][:300],
+            })
+            cid += 1
 
-    # Build comparison prompt
-    sources_text = ""
-    for name, content in source_contents.items():
-        sources_text += f"\n--- Source: {name} ---\n{content}\n"
+    context = "\n\n".join(context_parts)
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Compare and contrast the following sources. Create a structured comparison with:
-1. **Common Themes** — What topics/ideas appear in all sources
-2. **Key Differences** — Where sources diverge or provide unique information
-3. **Comparison Table** — A markdown table comparing key aspects
-4. **Synthesis** — What you learn by combining all sources together
+            prompt=f"""Compare and contrast the following sources.
+Cite the sources you reference using their numbers, e.g. [1], [2], etc.
 
-{sources_text}""",
-            system_prompt="You are an expert analyst. Create clear, structured comparisons. Use markdown formatting.",
+Rules:
+1. Every comparison fact or unique detail MUST cite the corresponding source numbers, e.g. [1].
+2. Structure the comparison with the following sections:
+   - **Common Themes**: What topics/ideas appear across the sources.
+   - **Key Differences**: Where sources diverge or provide unique information.
+   - **Comparison Table**: A markdown table comparing key aspects.
+   - **Synthesis**: Summary of the combined knowledge.
+
+Source Material:
+{context}""",
+            system_prompt="You are an expert analyst. Create structured, clear comparisons, citing sources with [1], [2], etc.",
             temperature=0.3,
             max_tokens=2000,
         )
         return {
             "comparison": result.content,
-            "sources_compared": request.source_names,
+            "sources_used": sources_used,
+            "provider": result.provider,
+            "model": result.model,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1634,6 +1741,298 @@ async def export_document(request: ExportRequest):
 
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {request.format}. Use: txt, md, docx, pdf")
+
+
+# ─── Editable Concept Board ───────────────────────────────────────────────────
+
+class ConceptSaveRequest(BaseModel):
+    id: Optional[int] = None
+    notebook_id: int
+    title: str
+    explanation: str
+    links: List[str] = []
+    x: Optional[int] = None
+    y: Optional[int] = None
+
+class ConceptGenerateRequest(BaseModel):
+    notebook_id: int
+    prompt: str
+
+@app.post("/api/concepts/generate")
+async def generate_concept_from_prompt(request: ConceptGenerateRequest):
+    """Generate a specific concept card using user prompt and relevant documents context."""
+    if not _memory or not _llm_router or not _vector_db or not _embedding_generator:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    prompt_text = request.prompt.strip()
+    if not prompt_text:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+
+    try:
+        # Retrieve context from vector db matching the prompt
+        query_vector = _embedding_generator.generate_query_embedding(prompt_text)
+        search_results = _vector_db.search(
+            query_vector=query_vector.tolist(),
+            limit=6,
+            notebook_id=request.notebook_id
+        )
+
+        context = "\n".join([r["content"] for r in search_results])
+        sources = list(set([r["source_file"] for r in search_results if r.get("source_file")]))
+
+        llm_prompt = f"""You are an elite academic tutor. Your goal is to write an exceptionally high-quality active recall study flashcard (front/back pair) for the topic/question: "{prompt_text}"
+
+Grounding Source Material Context (from user's notebook):
+{context[:4000]}
+
+Instructions:
+1. Grounding Assessment: First, analyze the grounding source context. Determine if this topic/question is answered or discussed in the source material.
+   - If YES: Set "found_in_sources": true. Base the explanation strictly on the facts, mechanisms, and details in the sources.
+   - If NO (sparse/unrelated/off-topic): Set "found_in_sources": false. Write the explanation using your own extensive general academic knowledge, starting the explanation with a brief "[General Knowledge]" label.
+
+2. FRONT (title): Write a precise, clear question or key term (1-8 words) for the front (e.g. "How does action potential propagate?" or "The definition of myelin").
+3. BACK (explanation): Write a highly accurate, rigorous, and beautifully clear explanation (2-4 sentences). Make it concrete, easy to understand, and packed with high-quality educational value. Avoid generic descriptions.
+
+Format your response EXACTLY as a raw JSON object:
+{{
+  "title": "Front content question/term",
+  "explanation": "Back content explanation",
+  "found_in_sources": true
+}}"""
+
+        res = _llm_router.generate(
+            prompt=llm_prompt,
+            system_prompt="You are a JSON-only response writer. Output only a raw JSON object with no quotes, markdown, or commentary.",
+            temperature=0.3
+        )
+        raw_json = res.content.strip()
+        if "```json" in raw_json:
+            raw_json = raw_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_json:
+            raw_json = raw_json.split("```")[1].split("```")[0].strip()
+
+        data = json.loads(raw_json)
+        title = data.get("title", "Core Concept").strip()
+        explanation = data.get("explanation", "").strip()
+        found_in_sources = data.get("found_in_sources", False)
+
+        # Clear linked sources if not found in context
+        if not found_in_sources or not context.strip():
+            sources = []
+
+        if not explanation:
+            explanation = f"Concept relating to: {prompt_text}"
+
+        # Shift order of all existing concepts to make room for the new one at the top-left
+        _memory.shift_concepts_order(request.notebook_id)
+
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title=title,
+            explanation=explanation,
+            links_json=json.dumps(sources),
+            x=50,
+            y=50,
+            sort_order=0
+        )
+
+        return {
+            "id": new_id,
+            "title": title,
+            "explanation": explanation,
+            "links": sources,
+            "x": 50,
+            "y": 50,
+            "sort_order": 0
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate concept from prompt: {e}")
+        _memory.shift_concepts_order(request.notebook_id)
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title="Generated Concept",
+            explanation=f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            links_json="[]",
+            x=50,
+            y=50,
+            sort_order=0
+        )
+        return {
+            "id": new_id,
+            "title": "Generated Concept",
+            "explanation": f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            "links": [],
+            "x": 50,
+            "y": 50,
+            "sort_order": 0
+        }
+
+@app.get("/api/concepts")
+async def get_concepts(notebook_id: int = Query(...)):
+    """Fetch all concepts for a notebook. If empty and never generated, auto-generate initial ones from sources."""
+    if not _memory or not _llm_router or not _vector_db:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    concepts = _memory.list_concepts(notebook_id)
+    if not concepts and not _memory.has_generated_concepts(notebook_id):
+        # Auto-generate initial concepts using LLM
+        sources = _memory.get_sources(notebook_id)
+        if sources:
+            source_content = ""
+            try:
+                search_results = _vector_db.search(
+                    query_vector=[0.0]*384,
+                    limit=5,
+                    notebook_id=notebook_id
+                )
+                source_content = "\n".join([r["content"] for r in search_results])
+            except Exception:
+                pass
+
+            if not source_content.strip():
+                source_content = "Study notebook documents and learning materials."
+
+            prompt = f"""You are a concept mapping agent. Analyze the following source material and identify 3 distinct core concepts, key terms, or core principles.
+For each concept, provide:
+1. A concise concept title (1 to 4 words).
+2. A brief, clear explanation (1 to 2 sentences) summarizing what it is.
+
+Source Material:
+{source_content[:3000]}
+
+Format your response EXACTLY as a JSON array of objects, with no other text, commentary, or markdown formatting:
+[
+  {{"title": "Concept Name", "explanation": "Short 1-2 sentence definition."}}
+]"""
+            try:
+                res = _llm_router.generate(
+                    prompt=prompt,
+                    system_prompt="You are a JSON-only response writer. Output only raw JSON array with no quotes or markdown.",
+                    temperature=0.3
+                )
+                raw_json = res.content.strip()
+                if "```json" in raw_json:
+                    raw_json = raw_json.split("```json")[1].split("```")[0].strip()
+                elif "```" in raw_json:
+                    raw_json = raw_json.split("```")[1].split("```")[0].strip()
+
+                initial_concepts = json.loads(raw_json)
+                for index, ic in enumerate(initial_concepts):
+                    links = [sources[0]["name"]] if len(sources) > 0 else []
+                    # Stagger coordinates horizontally: starts at 50, offsets by 350px per card
+                    stagger_x = 50 + (index * 350)
+                    stagger_y = 50
+                    _memory.create_concept(
+                        notebook_id=notebook_id,
+                        title=ic.get("title", "Core Concept"),
+                        explanation=ic.get("explanation", "Short explanation of the concept."),
+                        links_json=json.dumps(links),
+                        x=stagger_x,
+                        y=stagger_y,
+                        sort_order=index
+                    )
+                _memory.mark_concepts_generated(notebook_id)
+            except Exception as e:
+                logger.error(f"Failed to auto-generate concepts: {e}")
+                _memory.create_concept(
+                    notebook_id=notebook_id,
+                    title="Key Mindset Theme",
+                    explanation="Double click to edit and add your concept explanation here.",
+                    links_json="[]",
+                    x=50,
+                    y=50,
+                    sort_order=0
+                )
+                _memory.mark_concepts_generated(notebook_id)
+            concepts = _memory.list_concepts(notebook_id)
+
+    return {"concepts": concepts}
+
+@app.post("/api/concepts")
+async def save_concept(request: ConceptSaveRequest):
+    """Create or update a concept card."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    links_json = json.dumps(request.links)
+    if request.id is not None:
+        updated = _memory.update_concept(
+            concept_id=request.id,
+            title=request.title,
+            explanation=request.explanation,
+            links_json=links_json,
+            x=request.x,
+            y=request.y
+        )
+        return {"status": "updated", "success": updated}
+    else:
+        _memory.shift_concepts_order(request.notebook_id)
+        new_id = _memory.create_concept(
+            notebook_id=request.notebook_id,
+            title=request.title,
+            explanation=request.explanation,
+            links_json=links_json,
+            x=request.x or 100,
+            y=request.y or 100,
+            sort_order=0
+        )
+        return {"status": "created", "id": new_id}
+
+class ConceptReorderRequest(BaseModel):
+    notebook_id: int
+    concept_ids: List[int]
+
+@app.post("/api/concepts/reorder")
+async def reorder_concepts(request: ConceptReorderRequest):
+    """Reorder concepts for a notebook."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    try:
+        for index, cid in enumerate(request.concept_ids):
+            _memory.update_concept_order(cid, index)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to reorder concepts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ConceptGradeRequest(BaseModel):
+    concept_id: int
+    grade: str  # "easy", "good", "hard"
+
+@app.post("/api/concepts/grade")
+async def grade_concept(request: ConceptGradeRequest):
+    """Grade a flashcard's recall difficulty, updating its Leitner Box level."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    if request.grade not in ["easy", "good", "hard"]:
+        raise HTTPException(status_code=400, detail="Invalid grade value")
+    try:
+        new_box = _memory.grade_concept_card(request.concept_id, request.grade)
+        return {"status": "success", "new_box": new_box}
+    except Exception as e:
+        logger.error(f"Failed to grade flashcard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/concepts/{concept_id}")
+async def delete_concept(concept_id: int):
+    """Delete a concept card."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    deleted = _memory.delete_concept(concept_id)
+    return {"status": "deleted", "success": deleted}
+
+@app.post("/api/notebooks/{notebook_id}/concepts/reset-progress")
+async def reset_concepts_progress(notebook_id: int):
+    """Reset all flashcard boxes in a notebook to 1."""
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    try:
+        _memory.reset_concepts_progress(notebook_id)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to reset flashcard progress: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Static Frontend ───────────────────────────────────────────────────────────

@@ -48,9 +48,26 @@ class LocalMemoryLayer:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                is_private INTEGER DEFAULT 0,
+                password_hash TEXT DEFAULT NULL
             )
         """)
+
+        try:
+            cursor.execute("ALTER TABLE notebooks ADD COLUMN concepts_generated INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE notebooks ADD COLUMN is_private INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE notebooks ADD COLUMN password_hash TEXT DEFAULT NULL")
+        except Exception:
+            pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
@@ -134,6 +151,39 @@ class LocalMemoryLayer:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS concepts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notebook_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                links_json TEXT DEFAULT '[]',
+                x INTEGER DEFAULT 100,
+                y INTEGER DEFAULT 100,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Self-healing migration for existing concepts table
+        try:
+            cursor.execute("ALTER TABLE concepts ADD COLUMN x INTEGER DEFAULT 100")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE concepts ADD COLUMN y INTEGER DEFAULT 100")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE concepts ADD COLUMN sort_order INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE concepts ADD COLUMN leitner_box INTEGER DEFAULT 1")
+        except Exception:
+            pass
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS chunk_text (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notebook_id INTEGER NOT NULL,
@@ -149,6 +199,15 @@ class LocalMemoryLayer:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_chunk_text_notebook
             ON chunk_text(notebook_id)
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS study_guides (
+                notebook_id INTEGER PRIMARY KEY,
+                content_json TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+            )
         """)
 
         self.conn.commit()
@@ -178,14 +237,14 @@ class LocalMemoryLayer:
 
     # ─── Notebooks ─────────────────────────────────────────────────────────
 
-    def create_notebook(self, name: str) -> int:
+    def create_notebook(self, name: str, is_private: int = 0, password_hash: Optional[str] = None) -> int:
         """Create a new notebook. Returns its ID."""
         with self._lock:
             cursor = self.conn.cursor()
             now = datetime.now().isoformat()
             cursor.execute(
-                "INSERT INTO notebooks (name, created_at, updated_at) VALUES (?, ?, ?)",
-                (name, now, now),
+                "INSERT INTO notebooks (name, created_at, updated_at, is_private, password_hash) VALUES (?, ?, ?, ?, ?)",
+                (name, now, now, is_private, password_hash),
             )
             self.conn.commit()
             return cursor.lastrowid
@@ -193,7 +252,7 @@ class LocalMemoryLayer:
     def list_notebooks(self) -> List[Dict[str, Any]]:
         """List all notebooks."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, name, created_at, updated_at FROM notebooks ORDER BY updated_at DESC")
+        cursor.execute("SELECT id, name, created_at, updated_at, is_private, password_hash FROM notebooks ORDER BY updated_at DESC")
         notebooks = []
         for row in cursor.fetchall():
             nb_id = row["id"]
@@ -214,8 +273,22 @@ class LocalMemoryLayer:
                 "notes": note_count,
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
+                "is_private": row["is_private"] or 0,
+                "password_hash": row["password_hash"],
             })
         return notebooks
+
+    def verify_notebook_password(self, notebook_id: int, password_hash: str) -> bool:
+        """Verify password hash for private notebook."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT password_hash FROM notebooks WHERE id = ?", (notebook_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        stored_hash = row[0]
+        if not stored_hash:
+            return True
+        return stored_hash == password_hash
 
     def rename_notebook(self, notebook_id: int, name: str) -> bool:
         with self._lock:
@@ -757,6 +830,27 @@ class LocalMemoryLayer:
             row = cursor.fetchone()
             return row[0] if row else 0
 
+    def save_study_guide(self, notebook_id: int, content_json: str) -> None:
+        """Save or update study guide for a notebook."""
+        from datetime import datetime
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """INSERT OR REPLACE INTO study_guides (notebook_id, content_json, updated_at)
+               VALUES (?, ?, ?)""",
+            (notebook_id, content_json, datetime.now().isoformat())
+        )
+        self.conn.commit()
+
+    def get_study_guide(self, notebook_id: int) -> Optional[str]:
+        """Get study guide for a notebook."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT content_json FROM study_guides WHERE notebook_id = ?",
+            (notebook_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
     # ─── Cleanup ───────────────────────────────────────────────────────────
 
     def clear_all(self) -> None:
@@ -769,6 +863,120 @@ class LocalMemoryLayer:
         self.conn.commit()
         self._ensure_default_notebook()
         logger.info("Memory cleared")
+
+    def list_concepts(self, notebook_id: int) -> List[Dict[str, Any]]:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, notebook_id, title, explanation, links_json, x, y, sort_order, created_at, leitner_box FROM concepts WHERE notebook_id = ? ORDER BY sort_order ASC, id ASC",
+            (notebook_id,)
+        )
+        concepts = []
+        for r in cursor.fetchall():
+            concepts.append({
+                "id": r[0],
+                "notebook_id": r[1],
+                "title": r[2],
+                "explanation": r[3],
+                "links": json.loads(r[4] or "[]"),
+                "x": r[5] if r[5] is not None else 100,
+                "y": r[6] if r[6] is not None else 100,
+                "sort_order": r[7] if r[7] is not None else 0,
+                "created_at": r[8],
+                "leitner_box": r[9] if (len(r) > 9 and r[9] is not None) else (r[7] if r[7] is not None and 1 <= r[7] <= 5 else 1)
+            })
+        return concepts
+
+    def create_concept(self, notebook_id: int, title: str, explanation: str, links_json: str = "[]", x: int = 100, y: int = 100, sort_order: int = 0) -> int:
+        cursor = self.conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute(
+            "INSERT INTO concepts (notebook_id, title, explanation, links_json, x, y, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (notebook_id, title, explanation, links_json, x, y, sort_order, now)
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def update_concept(self, concept_id: int, title: Optional[str] = None, explanation: Optional[str] = None, links_json: Optional[str] = None, x: Optional[int] = None, y: Optional[int] = None) -> bool:
+        cursor = self.conn.cursor()
+        updates = []
+        params = []
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if explanation is not None:
+            updates.append("explanation = ?")
+            params.append(explanation)
+        if links_json is not None:
+            updates.append("links_json = ?")
+            params.append(links_json)
+        if x is not None:
+            updates.append("x = ?")
+            params.append(x)
+        if y is not None:
+            updates.append("y = ?")
+            params.append(y)
+        if not updates:
+            return False
+        params.append(concept_id)
+        cursor.execute(
+            f"UPDATE concepts SET {', '.join(updates)} WHERE id = ?",
+            tuple(params)
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def shift_concepts_order(self, notebook_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE concepts SET sort_order = sort_order + 1 WHERE notebook_id = ?", (notebook_id,))
+        self.conn.commit()
+
+    def update_concept_order(self, concept_id: int, sort_order: int):
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE concepts SET sort_order = ? WHERE id = ?", (sort_order, concept_id))
+        self.conn.commit()
+
+    def delete_concept(self, concept_id: int) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM concepts WHERE id = ?", (concept_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def has_generated_concepts(self, notebook_id: int) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT concepts_generated FROM notebooks WHERE id = ?", (notebook_id,))
+        row = cursor.fetchone()
+        return bool(row and row[0])
+
+    def mark_concepts_generated(self, notebook_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE notebooks SET concepts_generated = 1 WHERE id = ?", (notebook_id,))
+        self.conn.commit()
+
+    def grade_concept_card(self, concept_id: int, grade: str) -> int:
+        """Update flashcard leitner_box level (1-5) based on user recall grade."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT leitner_box FROM concepts WHERE id = ?", (concept_id,))
+        row = cursor.fetchone()
+        current_box = row[0] if row else 1
+        if not current_box or current_box < 1:
+            current_box = 1
+
+        if grade == "easy":
+            new_box = min(5, current_box + 1)
+        elif grade == "hard":
+            new_box = 1
+        else:  # good
+            new_box = current_box
+
+        cursor.execute("UPDATE concepts SET leitner_box = ? WHERE id = ?", (new_box, concept_id))
+        self.conn.commit()
+        return new_box
+
+    def reset_concepts_progress(self, notebook_id: int):
+        """Reset leitner_box to 1 for all concept cards in a notebook."""
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE concepts SET leitner_box = 1 WHERE notebook_id = ?", (notebook_id,))
+        self.conn.commit()
 
     def close(self) -> None:
         if self.conn:
