@@ -2,12 +2,13 @@
 title CarnetLM
 cd /d "%~dp0"
 
+:: Add common Python and UV paths to PATH if missing
+set "PATH=%LOCALAPPDATA%\Programs\Python\Python313\Scripts;%LOCALAPPDATA%\Programs\Python\Python313;%USERPROFILE%\.cargo\bin;%LOCALAPPDATA%\bin;%PATH%"
+
 echo.
-echo   ____                      _   _     __  __ 
-echo  / ___|__ _ _ __ _ __   ___| |_| |   |  \/  |
-echo | |   / _` | '__| '_ \ / _ \ __| |   | |\/| |
-echo | |__| (_| | |  | | | |  __/ |_| |___| |  | |
-echo  \____\__,_|_|  |_| |_|\___|\__|\_____|_|  |_|
+echo  ========================================
+echo             CarnetLM Server
+echo  ========================================
 echo.
 
 :: Check if uv is available
@@ -21,8 +22,16 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :: Kill any existing server on port 8000
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000.*LISTENING" 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr /r ":8000.*LISTENING" 2^>nul') do (
+    if not "%%a"=="0" taskkill /PID %%a /F >nul 2>&1
+)
+
+:: Create .env if missing
+if not exist ".env" (
+    if exist ".env.example" (
+        echo Creating .env from .env.example ...
+        copy ".env.example" ".env" >nul
+    )
 )
 
 :: Sync/Install all dependencies declared in pyproject.toml
@@ -48,3 +57,4 @@ echo.
 echo [CarnetLM stopped]
 echo.
 pause
+
