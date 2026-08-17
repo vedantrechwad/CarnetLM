@@ -293,7 +293,7 @@ class MilvusVectorDB:
                         return original_func(*args, **kwargs)
                     except Exception as e:
                         err_str = str(e)
-                        if "WinError 183" in err_str or "already exists" in err_str:
+                        if "WinError 183" in err_str or "FileExistsError" in err_str:
                             logger.warning(f"Milvus operation '{func_name}' failed with rename/lock error, cleaning temp files and retrying: {e}")
                             self._cleanup_temp_files()
                             return original_func(*args, **kwargs)
@@ -355,6 +355,14 @@ class MilvusVectorDB:
             if not self.collection_exists:
                 raise Exception("Collection does not exist. Setup collection first.")
             
+            try:
+                indexes = self.client.list_indexes(collection_name=self.collection_name)
+                if indexes:
+                    logger.info("Index already exists, skipping creation")
+                    return
+            except Exception:
+                pass
+
             index_params = self.client.prepare_index_params()
             
             if use_binary_quantization:

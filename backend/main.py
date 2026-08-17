@@ -915,6 +915,7 @@ async def delete_source(source_id: int):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Ask a question about your sources."""
+    import asyncio
     if not _rag_generator:
         raise HTTPException(status_code=503, detail="Not initialized")
 
@@ -924,7 +925,8 @@ async def chat(request: ChatRequest):
         notebook_id=request.notebook_id, max_turns=_conversation_turns(),
     )
 
-    result = _rag_generator.generate_response(
+    result = await asyncio.to_thread(
+        _rag_generator.generate_response,
         query=request.query,
         notebook_id=request.notebook_id,
         conversation_context=conv_context,

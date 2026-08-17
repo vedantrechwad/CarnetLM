@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 
-DEFAULT_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "32"))
+DEFAULT_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "64"))
 
 
 
@@ -119,6 +119,24 @@ class EmbeddingGenerator:
         except Exception as e:
 
             logger.error(f"Failed to initialize embedding model: {str(e)}")
+
+            cache_dir = Path(tempfile.gettempdir()) / "fastembed_cache"
+
+            if cache_dir.exists():
+
+                logger.info("Clearing corrupted fastembed_cache directory and retrying...")
+
+                shutil.rmtree(cache_dir, ignore_errors=True)
+
+                self.model = TextEmbedding(model_name=self.model_name)
+
+                sample_embedding = list(self.model.embed(["test"]))[0]
+
+                self.embedding_dim = len(sample_embedding)
+
+                logger.info(f"Model re-initialized successfully. Embedding dimension: {self.embedding_dim}")
+
+                return
 
             raise
 
