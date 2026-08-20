@@ -87,10 +87,13 @@ class LLMRouter:
                 self.ollama_model = model_names[0]
                 logger.info(f"Default model not found, auto-selected: {self.ollama_model}")
 
-        if self.ollama_available:
-            logger.info(f"LLM Router: Ollama available, active model: {self.ollama_model}")
+        if self.gemini_available:
+            self._force_provider = "gemini"
+            logger.info(f"LLM Router: Gemini active (primary). Ollama available: {self.ollama_available}")
+        elif self.ollama_available:
             self._force_provider = "ollama"
-        if not self.gemini_available and not self.ollama_available:
+            logger.info(f"LLM Router: Ollama active (fallback), active model: {self.ollama_model}")
+        else:
             logger.warning("LLM Router: No LLM provider available!")
 
     # ─── Ollama Management ─────────────────────────────────────────────────
@@ -114,10 +117,10 @@ class LLMRouter:
                     break
 
         if not ollama_path:
-            logger.warning("Ollama not found. Install from https://ollama.ai")
+            logger.info("Ollama executable not found on system.")
             return
 
-        logger.info(f"Starting Ollama from: {ollama_path}")
+        logger.info(f"Starting Ollama process from: {ollama_path}")
         try:
             # Start ollama serve as a background process
             self._ollama_process = subprocess.Popen(
@@ -127,22 +130,22 @@ class LLMRouter:
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
 
-            # Wait for it to be ready (up to 10 seconds)
-            for i in range(20):
-                time.sleep(0.5)
+            # Quick wait check (up to 1 second max to prevent server launch block)
+            for i in range(5):
+                time.sleep(0.2)
                 if self._check_ollama():
                     logger.info(f"Ollama started successfully (PID {self._ollama_process.pid})")
                     return
 
-            logger.warning("Ollama process started but not responding")
+            logger.info("Ollama process launched in background.")
 
         except Exception as e:
-            logger.warning(f"Failed to start Ollama: {e}")
+            logger.warning(f"Failed to start Ollama background process: {e}")
 
     def _check_ollama(self) -> bool:
-        """Check if Ollama is running."""
+        """Check if Ollama is running with fast timeout."""
         try:
-            r = self._http_client.get(f"{self.ollama_base_url}/api/tags", timeout=3.0)
+            r = self._http_client.get(f"{self.ollama_base_url}/api/tags", timeout=1.0)
             return r.status_code == 200
         except Exception:
             return False
