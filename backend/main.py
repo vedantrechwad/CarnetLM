@@ -7,7 +7,6 @@ Multi-notebook document Q&A with notes, AI writing assist, and export.
 import os
 import re
 import json
-import time
 import logging
 import hashlib
 import tempfile
@@ -1034,11 +1033,6 @@ async def clear_history(notebook_id: int = Query(1)):
     return {"status": "ok"}
 
 
-# NOTE: /api/chat/stream removed — was fake streaming (generated full response
-# synchronously then split into 3-word chunks). The frontend now uses /api/chat.
-# True streaming would require the LLM router to yield tokens.
-
-
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
 
 @app.get("/api/summary")
@@ -1760,6 +1754,122 @@ class ConceptGenerateRequest(BaseModel):
     notebook_id: int
     prompt: str
 
+class DeckGenerateRequest(BaseModel):
+    notebook_id: int
+    count: int = 10
+    focus_topic: Optional[str] = None
+
+@app.post("/api/concepts/generate-deck")
+async def generate_flashcard_deck(request: DeckGenerateRequest):
+    """Generate a batch of high-quality active recall flashcards from notebook documents."""
+    if not _memory or not _llm_router:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    chunk_docs = _memory.get_chunk_texts_by_notebook(request.notebook_id)
+    if not chunk_docs:
+        sources = _memory.get_sources(request.notebook_id)
+        if not sources:
+            raise HTTPException(status_code=400, detail="No documents found in this notebook. Please upload resources first.")
+
+    # Sample representative chunks across the notebook (compact context for speed)
+    sampled_texts = []
+    sources_seen = set()
+    total_chunks = len(chunk_docs)
+    
+    if total_chunks > 0:
+        step = max(1, total_chunks // min(total_chunks, 8))
+        for i in range(0, total_chunks, step):
+            c = chunk_docs[i]
+            content = c.get("content", "").strip()
+            if content:
+                sampled_texts.append(content[:450])
+            source_file = c.get("citation", {}).get("source_file")
+            if source_file:
+                sources_seen.add(source_file)
+    
+    context_text = "\n\n---\n\n".join(sampled_texts)[:3200]
+    if not context_text.strip():
+        context_text = "Key educational materials from notebook."
+
+    card_count = max(3, min(15, request.count or 6))
+    focus_instr = f"\nFocus especially on the topic: '{request.focus_topic}'" if request.focus_topic else ""
+
+    prompt = f"""You are a master academic tutor and cognitive science flashcard creator.
+Analyze the source material below and create {card_count} high-yield, meaningful active-recall study flashcards.{focus_instr}
+
+Source Material:
+{context_text}
+
+Strict Requirements:
+1. FRONT (title): A clear, direct test question, technical term, or mechanism query that tests deep understanding (not trivia).
+2. BACK (explanation): A precise, complete, and educational 2-3 sentence explanation directly answering the question accurately.
+3. Every card must cover a distinct core takeaway, mechanism, formula, or principle from the text.
+
+Respond ONLY with a valid JSON array in this exact format, with no other text or formatting:
+[
+  {{
+    "title": "Clear active-recall question or key concept",
+    "explanation": "Precise, crystal-clear 2-3 sentence answer explaining the concept."
+  }}
+]"""
+
+    try:
+        res = _llm_router.generate(
+            prompt=prompt,
+            system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array of objects. Never output markdown codeblocks, commentary, or conversational text.",
+            temperature=0.2,
+            max_tokens=1500
+        )
+        raw = res.content.strip()
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
+
+        match = re.search(r'\[\s*\{.*\}\s*\]', raw, re.DOTALL)
+        if match:
+            raw = match.group(0)
+
+        cards_data = json.loads(raw)
+        created_cards = []
+        source_links = list(sources_seen) if sources_seen else []
+
+        for index, item in enumerate(cards_data):
+            title = str(item.get("title", "")).strip()
+            explanation = str(item.get("explanation", "")).strip()
+            if not title or not explanation:
+                continue
+
+            stagger_x = 50 + (index * 320)
+            stagger_y = 50
+            new_id = _memory.create_concept(
+                notebook_id=request.notebook_id,
+                title=title,
+                explanation=explanation,
+                links_json=json.dumps(source_links),
+                x=stagger_x,
+                y=stagger_y,
+                sort_order=index
+            )
+            created_cards.append({
+                "id": new_id,
+                "notebook_id": request.notebook_id,
+                "title": title,
+                "explanation": explanation,
+                "links": source_links,
+                "x": stagger_x,
+                "y": stagger_y,
+                "sort_order": index,
+                "leitner_box": 1
+            })
+
+        _memory.mark_concepts_generated(request.notebook_id)
+        return {"status": "success", "count": len(created_cards), "concepts": _memory.list_concepts(request.notebook_id)}
+
+    except Exception as e:
+        logger.error(f"Failed to generate flashcard deck: {e}")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
 @app.post("/api/concepts/generate")
 async def generate_concept_from_prompt(request: ConceptGenerateRequest):
     """Generate a specific concept card using user prompt and relevant documents context."""
@@ -1771,41 +1881,36 @@ async def generate_concept_from_prompt(request: ConceptGenerateRequest):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
     try:
-        # Retrieve context from vector db matching the prompt
         query_vector = _embedding_generator.generate_query_embedding(prompt_text)
         search_results = _vector_db.search(
             query_vector=query_vector.tolist(),
-            limit=6,
+            limit=5,
             notebook_id=request.notebook_id
         )
 
-        context = "\n".join([r["content"] for r in search_results])
+        context = "\n".join([r["content"] for r in search_results])[:2500]
         sources = list(set([r["source_file"] for r in search_results if r.get("source_file")]))
 
-        llm_prompt = f"""You are an elite academic tutor. Your goal is to write an exceptionally high-quality active recall study flashcard (front/back pair) for the topic/question: "{prompt_text}"
+        llm_prompt = f"""You are an elite academic tutor. Create a high-yield active recall flashcard for the topic/question: "{prompt_text}"
 
-Grounding Source Material Context (from user's notebook):
-{context[:4000]}
+Source Context:
+{context}
 
-Instructions:
-1. Grounding Assessment: First, analyze the grounding source context. Determine if this topic/question is answered or discussed in the source material.
-   - If YES: Set "found_in_sources": true. Base the explanation strictly on the facts, mechanisms, and details in the sources.
-   - If NO (sparse/unrelated/off-topic): Set "found_in_sources": false. Write the explanation using your own extensive general academic knowledge, starting the explanation with a brief "[General Knowledge]" label.
+Requirements:
+1. FRONT (title): Write a precise, active recall question or key concept (1-10 words).
+2. BACK (explanation): Write a clear, rigorous, educational 2-3 sentence answer directly based on the subject.
 
-2. FRONT (title): Write a precise, clear question or key term (1-8 words) for the front (e.g. "How does action potential propagate?" or "The definition of myelin").
-3. BACK (explanation): Write a highly accurate, rigorous, and beautifully clear explanation (2-4 sentences). Make it concrete, easy to understand, and packed with high-quality educational value. Avoid generic descriptions.
-
-Format your response EXACTLY as a raw JSON object:
+Output ONLY a raw JSON object:
 {{
-  "title": "Front content question/term",
-  "explanation": "Back content explanation",
-  "found_in_sources": true
+  "title": "Clear active recall question",
+  "explanation": "Precise, complete 2-3 sentence explanation."
 }}"""
 
         res = _llm_router.generate(
             prompt=llm_prompt,
-            system_prompt="You are a JSON-only response writer. Output only a raw JSON object with no quotes, markdown, or commentary.",
-            temperature=0.3
+            system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON object.",
+            temperature=0.2,
+            max_tokens=600
         )
         raw_json = res.content.strip()
         if "```json" in raw_json:
@@ -1813,19 +1918,17 @@ Format your response EXACTLY as a raw JSON object:
         elif "```" in raw_json:
             raw_json = raw_json.split("```")[1].split("```")[0].strip()
 
-        data = json.loads(raw_json)
-        title = data.get("title", "Core Concept").strip()
-        explanation = data.get("explanation", "").strip()
-        found_in_sources = data.get("found_in_sources", False)
+        match = re.search(r'\{.*\}', raw_json, re.DOTALL)
+        if match:
+            raw_json = match.group(0)
 
-        # Clear linked sources if not found in context
-        if not found_in_sources or not context.strip():
-            sources = []
+        data = json.loads(raw_json)
+        title = data.get("title", prompt_text).strip()
+        explanation = data.get("explanation", "").strip()
 
         if not explanation:
-            explanation = f"Concept relating to: {prompt_text}"
+            explanation = f"Active recall summary of: {prompt_text}"
 
-        # Shift order of all existing concepts to make room for the new one at the top-left
         _memory.shift_concepts_order(request.notebook_id)
 
         new_id = _memory.create_concept(
@@ -1845,15 +1948,16 @@ Format your response EXACTLY as a raw JSON object:
             "links": sources,
             "x": 50,
             "y": 50,
-            "sort_order": 0
+            "sort_order": 0,
+            "leitner_box": 1
         }
     except Exception as e:
         logger.error(f"Failed to generate concept from prompt: {e}")
         _memory.shift_concepts_order(request.notebook_id)
         new_id = _memory.create_concept(
             notebook_id=request.notebook_id,
-            title="Generated Concept",
-            explanation=f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            title=prompt_text[:50],
+            explanation=f"Key study concept: {prompt_text}",
             links_json="[]",
             x=50,
             y=50,
@@ -1861,56 +1965,52 @@ Format your response EXACTLY as a raw JSON object:
         )
         return {
             "id": new_id,
-            "title": "Generated Concept",
-            "explanation": f"Double click to edit. AI could not generate from prompt: {prompt_text}",
+            "title": prompt_text[:50],
+            "explanation": f"Key study concept: {prompt_text}",
             "links": [],
             "x": 50,
             "y": 50,
-            "sort_order": 0
+            "sort_order": 0,
+            "leitner_box": 1
         }
 
 @app.get("/api/concepts")
 async def get_concepts(notebook_id: int = Query(...)):
-    """Fetch all concepts for a notebook. If empty and never generated, auto-generate initial ones from sources."""
-    if not _memory or not _llm_router or not _vector_db:
+    """Fetch all concepts for a notebook. If empty, automatically generate high-yield flashcards from uploaded sources."""
+    if not _memory or not _llm_router:
         raise HTTPException(status_code=503, detail="Not initialized")
 
     concepts = _memory.list_concepts(notebook_id)
-    if not concepts and not _memory.has_generated_concepts(notebook_id):
-        # Auto-generate initial concepts using LLM
-        sources = _memory.get_sources(notebook_id)
-        if sources:
-            source_content = ""
-            try:
-                search_results = _vector_db.search(
-                    query_vector=[0.0]*384,
-                    limit=5,
-                    notebook_id=notebook_id
-                )
-                source_content = "\n".join([r["content"] for r in search_results])
-            except Exception:
-                pass
+    if not concepts:
+        chunks = _memory.get_chunk_texts_by_notebook(notebook_id)
+        if chunks:
+            sources = _memory.get_sources(notebook_id)
+            source_name = sources[0]["name"] if sources else ""
+            
+            # Sample up to 6 chunks for instant generation
+            sampled = []
+            for c in chunks[:6]:
+                if c.get("content"):
+                    sampled.append(c["content"][:400])
+            source_content = "\n\n---\n\n".join(sampled)[:2400]
 
-            if not source_content.strip():
-                source_content = "Study notebook documents and learning materials."
+            prompt = f"""You are an elite tutor. Create 4 high-yield active-recall flashcards based on this source text:
+{source_content}
 
-            prompt = f"""You are a concept mapping agent. Analyze the following source material and identify 3 distinct core concepts, key terms, or core principles.
-For each concept, provide:
-1. A concise concept title (1 to 4 words).
-2. A brief, clear explanation (1 to 2 sentences) summarizing what it is.
+Requirements:
+- FRONT: Clear test question or definition trigger (1-8 words).
+- BACK: Informative, clear 2-3 sentence answer.
 
-Source Material:
-{source_content[:3000]}
-
-Format your response EXACTLY as a JSON array of objects, with no other text, commentary, or markdown formatting:
+Output ONLY a JSON array:
 [
-  {{"title": "Concept Name", "explanation": "Short 1-2 sentence definition."}}
+  {{"title": "Question or Key Term", "explanation": "Clear, informative 2-3 sentence explanation."}}
 ]"""
             try:
                 res = _llm_router.generate(
                     prompt=prompt,
-                    system_prompt="You are a JSON-only response writer. Output only raw JSON array with no quotes or markdown.",
-                    temperature=0.3
+                    system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array.",
+                    temperature=0.2,
+                    max_tokens=1000
                 )
                 raw_json = res.content.strip()
                 if "```json" in raw_json:
@@ -1918,34 +2018,28 @@ Format your response EXACTLY as a JSON array of objects, with no other text, com
                 elif "```" in raw_json:
                     raw_json = raw_json.split("```")[1].split("```")[0].strip()
 
+                match = re.search(r'\[\s*\{.*\}\s*\]', raw_json, re.DOTALL)
+                if match:
+                    raw_json = match.group(0)
+
                 initial_concepts = json.loads(raw_json)
                 for index, ic in enumerate(initial_concepts):
-                    links = [sources[0]["name"]] if len(sources) > 0 else []
-                    # Stagger coordinates horizontally: starts at 50, offsets by 350px per card
-                    stagger_x = 50 + (index * 350)
-                    stagger_y = 50
-                    _memory.create_concept(
-                        notebook_id=notebook_id,
-                        title=ic.get("title", "Core Concept"),
-                        explanation=ic.get("explanation", "Short explanation of the concept."),
-                        links_json=json.dumps(links),
-                        x=stagger_x,
-                        y=stagger_y,
-                        sort_order=index
-                    )
+                    title = ic.get("title", "").strip()
+                    explanation = ic.get("explanation", "").strip()
+                    if title and explanation:
+                        links = [source_name] if source_name else []
+                        _memory.create_concept(
+                            notebook_id=notebook_id,
+                            title=title,
+                            explanation=explanation,
+                            links_json=json.dumps(links),
+                            x=50 + (index * 320),
+                            y=50,
+                            sort_order=index
+                        )
                 _memory.mark_concepts_generated(notebook_id)
             except Exception as e:
-                logger.error(f"Failed to auto-generate concepts: {e}")
-                _memory.create_concept(
-                    notebook_id=notebook_id,
-                    title="Key Mindset Theme",
-                    explanation="Double click to edit and add your concept explanation here.",
-                    links_json="[]",
-                    x=50,
-                    y=50,
-                    sort_order=0
-                )
-                _memory.mark_concepts_generated(notebook_id)
+                logger.warning(f"Could not auto-generate initial concepts: {e}")
             concepts = _memory.list_concepts(notebook_id)
 
     return {"concepts": concepts}

@@ -2,21 +2,11 @@
 Backend service helpers — chunking, ingest, indexing.
 """
 
-import json
 import logging
-import os
-import tempfile
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.document_processing.chunking_service import ChunkingService
 from src.document_processing.document_chunk import DocumentChunk
-from src.ingest.pipeline import (
-    apply_chunking_to_processors,
-    file_checksum,
-    ingest_chunks,
-    store_source_file,
-)
 from src.llm.model_registry import (
     CHUNK_PRESETS,
     EMBEDDING_MAX_TOKENS,
