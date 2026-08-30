@@ -221,14 +221,16 @@
                     </div>
                     
                     <!-- AI Flashcard Generator Input -->
-                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:450px;">
-                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate flashcards (e.g. 'Test me on neuroplasticity')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:480px;">
+                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate a flashcard (e.g. 'Key takeaways on neural networks')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
                         <button class="btn btn-sm btn-primary" onclick="generateConceptCard()" id="btnGenerateConcept" style="height:32px;white-space:nowrap;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">smart_toy</span> Generate</button>
                     </div>
 
                     <div style="display:flex;gap:0.5rem">
-                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add Card</button>
-                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh</button>
+                        <button class="btn btn-sm btn-primary" onclick="generateFullDeckDialog()" id="btnAutoDeck" style="background:var(--primary-container);color:#fff;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">auto_awesome</span> Auto-Deck</button>
+                        <button class="btn btn-sm btn-soft" onclick="exportFlashcardsDeck()" title="Export Deck to Markdown / Anki CSV"><span class="material-symbols-outlined" style="font-size:14px">download</span> Export</button>
+                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add</button>
+                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span></button>
                     </div>
                 </div>
                 <div class="graph-container" id="graphContainer" style="flex:1;position:relative;background:var(--background);overflow-y:auto;display:flex;flex-direction:column;">
@@ -293,7 +295,7 @@
             <div class="sidebar-section">
                 <div class="sidebar-section-title">
                     Notebooks
-                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="createNotebook()" title="New Notebook">+ NEW</button>
+                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="openCreateNotebookModal()" title="New Notebook">+ NEW</button>
                 </div>
             </div>
             <div class="sidebar-list custom-scrollbar" id="notebookList"></div>
@@ -489,8 +491,152 @@
             <div id="settingsTtsInfo" style="font-size:0.8125rem;color:var(--secondary)">Checking...</div>
         </div>
         <div class="settings-section">
+            <h4>Security & Master Recovery</h4>
+            <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.5rem; line-height:1.4;">
+                Use your Master Recovery Key to unlock or reset any private notebook if you forget its password.
+            </p>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <input class="input" id="settingsMasterRecoveryKey" type="password" readonly style="font-family:var(--font-mono); font-size:0.8125rem; letter-spacing:0.05em;" value="Loading...">
+                <button class="btn btn-soft btn-sm" id="toggleRecoveryKeyVisBtn" onclick="toggleRecoveryKeyVisibility()" title="Show/Hide Key">
+                    <span class="material-symbols-outlined" id="recoveryKeyEyeIcon" style="font-size:16px">visibility</span>
+                </button>
+                <button class="btn btn-soft btn-sm" onclick="copyMasterRecoveryKey()" title="Copy Key">
+                    <span class="material-symbols-outlined" style="font-size:16px">content_copy</span>
+                </button>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                <button class="btn btn-soft btn-sm" onclick="regenerateMasterRecoveryKeyUI()">Regenerate Master Key</button>
+            </div>
+        </div>
+        <div class="settings-section">
             <h4>System health</h4>
             <div class="health-dots" id="settingsHealth"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-createNotebook">
+    <div class="modal" style="max-width:480px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">book</span> Create Notebook <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group">
+            <label class="input-label">Notebook Name</label>
+            <input type="text" class="input" id="newNotebookNameInput" placeholder="e.g. Physics 101, Project X...">
+        </div>
+        
+        <div style="margin-top:1rem; border:1px solid var(--border-subtle); border-radius:var(--radius); padding:0.875rem; background:rgba(255,255,255,0.02);">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; font-weight:600; cursor:pointer; user-select:none;">
+                <input type="checkbox" id="createNbIsPrivateCheckbox" onchange="toggleCreateNotebookPrivateFields()" style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                <span class="material-symbols-outlined" style="font-size:16px; color:var(--primary)">lock</span>
+                Private Notebook (Password Protected)
+            </label>
+            
+            <div id="createNbPrivateFields" style="display:none; margin-top:0.875rem; flex-direction:column; gap:0.75rem;">
+                <div class="input-group">
+                    <label class="input-label">Password</label>
+                    <input type="password" class="input" id="createNbPassword" placeholder="Enter a secure password">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Confirm Password</label>
+                    <input type="password" class="input" id="createNbConfirmPassword" placeholder="Re-enter password">
+                </div>
+                
+                <div class="input-group" style="margin-top:0.25rem;">
+                    <label class="input-label">Security Question (for Password Reset)</label>
+                    <select class="input" id="createNbSecurityQuestionSelect" onchange="handleSecurityQuestionSelectChange()">
+                        <option value="What was the name of your first pet?">What was the name of your first pet?</option>
+                        <option value="What city were you born in?">What city were you born in?</option>
+                        <option value="What is your favorite book or movie?">What is your favorite book or movie?</option>
+                        <option value="What was the name of your first school?">What was the name of your first school?</option>
+                        <option value="What is your secret phrase?">What is your secret phrase?</option>
+                        <option value="custom">Custom Security Question...</option>
+                    </select>
+                </div>
+                <div class="input-group" id="createNbCustomQuestionGroup" style="display:none;">
+                    <label class="input-label">Custom Question</label>
+                    <input type="text" class="input" id="createNbCustomQuestionInput" placeholder="Enter your custom security question">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Security Answer</label>
+                    <input type="text" class="input" id="createNbSecurityAnswer" placeholder="Answer to your security question">
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.4; background:rgba(var(--primary-rgb, 100,100,255), 0.08); padding:0.5rem 0.75rem; border-radius:6px; margin-top:0.25rem;">
+                    💡 <strong>Tip:</strong> If you forget this password, you can reset it via your security answer or your Master Recovery Key in Settings.
+                </div>
+            </div>
+        </div>
+        
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+            <button class="btn btn-ghost" onclick="closeModals()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateNotebook()">Create Notebook</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-resetPassword">
+    <div class="modal" style="max-width:460px">
+        <h3>
+            <span style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">lock_reset</span>
+                Reset Notebook Password
+            </span>
+            <button class="modal-close" onclick="closeModals()">&times;</button>
+        </h3>
+        
+        <div id="resetPwdNotebookName" style="font-size:0.8125rem; color:var(--text-secondary); margin-bottom:0.75rem; font-weight:500;"></div>
+        
+        <!-- Recovery Mode Switcher -->
+        <div id="resetTabContainer" style="display:flex; border:1px solid var(--border-subtle); border-radius:var(--radius); overflow:hidden; margin-bottom:1rem;">
+            <button id="resetTabQuestionBtn" class="btn btn-sm" onclick="switchResetPasswordTab('question')" style="flex:1; border-radius:0; border:none; background:var(--primary); color:#fff; font-size:0.75rem;">
+                Security Question
+            </button>
+            <button id="resetTabMasterKeyBtn" class="btn btn-sm" onclick="switchResetPasswordTab('master_key')" style="flex:1; border-radius:0; border:none; background:transparent; color:var(--text-secondary); font-size:0.75rem;">
+                Master Recovery Key
+            </button>
+        </div>
+        
+        <!-- Tab 1: Security Question -->
+        <div id="resetTabQuestionSection" style="display:flex; flex-direction:column; gap:0.75rem;">
+            <div id="resetSecurityQuestionDisplay" style="font-size:0.8125rem; font-weight:600; color:var(--text-primary); padding:0.6rem 0.75rem; background:rgba(255,255,255,0.04); border-radius:6px; border-left:3px solid var(--primary);">
+                Loading question...
+            </div>
+            <div class="input-group">
+                <label class="input-label">Your Security Answer</label>
+                <input type="text" class="input" id="resetSecurityAnswerInput" placeholder="Enter the answer you set earlier">
+            </div>
+        </div>
+        
+        <!-- Tab 2: Master Recovery Key -->
+        <div id="resetTabMasterKeySection" style="display:none; flex-direction:column; gap:0.75rem;">
+            <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.4;">
+                Enter your Master Recovery Key from Settings to reset this notebook.
+            </div>
+            <div class="input-group">
+                <label class="input-label">Master Recovery Key</label>
+                <input type="text" class="input" id="resetMasterKeyInput" placeholder="e.g. CARNET-REC-XXXX-XXXX" style="font-family:var(--font-mono); font-size:0.8125rem; text-transform:uppercase;">
+            </div>
+        </div>
+        
+        <!-- New Password Fields -->
+        <div style="display:flex; flex-direction:column; gap:0.75rem; margin-top:1rem; padding-top:0.875rem; border-top:1px solid var(--border-subtle);">
+            <div class="input-group">
+                <label class="input-label">New Password</label>
+                <input type="password" class="input" id="resetNewPasswordInput" placeholder="Enter new password">
+            </div>
+            <div class="input-group">
+                <label class="input-label">Confirm New Password</label>
+                <input type="password" class="input" id="resetConfirmPasswordInput" placeholder="Re-enter new password">
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.25rem;">
+                <input type="checkbox" id="resetShowPasswordCheckbox" onchange="toggleResetPasswordVisibility()" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
+                <label for="resetShowPasswordCheckbox" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Passwords</label>
+            </div>
+        </div>
+        
+        <div id="resetPasswordStatus" style="margin-top:0.5rem;"></div>
+        
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+            <button class="btn btn-ghost" onclick="closeModals()">Cancel</button>
+            <button class="btn btn-primary" id="submitResetPasswordBtn" onclick="submitResetPassword()">Reset & Open Notebook</button>
         </div>
     </div>
 </div>
@@ -794,7 +940,7 @@ async function appendToNoteAndOpen(noteId, enc) {
 }
 
 // Generic modal dialog manager
-function showCustomDialog({ title, message, isPrompt = false, isConfirm = false, isPassword = false, defaultValue = "" }) {
+function showCustomDialog({ title, message, isPrompt = false, isConfirm = false, isPassword = false, defaultValue = "", notebookId = null }) {
     return new Promise((resolve) => {
         let modal = document.getElementById('customDialogModal');
         if (!modal) {
@@ -808,10 +954,16 @@ function showCustomDialog({ title, message, isPrompt = false, isConfirm = false,
         let inputHtml = '';
         if (isPrompt) {
             const inputType = isPassword ? 'password' : 'text';
+            const forgotPwdBtnHtml = (isPassword && notebookId) ? `
+                <button type="button" id="customDialogForgotPwdBtn" class="btn btn-ghost btn-xs" style="font-size:0.75rem; color:var(--primary); padding:0.1rem 0.4rem; text-decoration:underline; cursor:pointer;">Forgot Password?</button>
+            ` : '';
             const toggleHtml = isPassword ? `
-                <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem;">
-                    <input type="checkbox" id="customDialogShowPassword" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
-                    <label for="customDialogShowPassword" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Password</label>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.75rem; width:100%;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" id="customDialogShowPassword" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
+                        <label for="customDialogShowPassword" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Password</label>
+                    </div>
+                    ${forgotPwdBtnHtml}
                 </div>
             ` : '';
             inputHtml = `
@@ -865,9 +1017,19 @@ function showCustomDialog({ title, message, isPrompt = false, isConfirm = false,
             
             if (isPassword) {
                 const showPasswordCheckbox = document.getElementById('customDialogShowPassword');
-                showPasswordCheckbox.addEventListener('change', (e) => {
-                    inputEl.type = e.target.checked ? 'text' : 'password';
-                });
+                if (showPasswordCheckbox) {
+                    showPasswordCheckbox.addEventListener('change', (e) => {
+                        inputEl.type = e.target.checked ? 'text' : 'password';
+                    });
+                }
+                
+                const forgotBtn = document.getElementById('customDialogForgotPwdBtn');
+                if (forgotBtn && notebookId) {
+                    forgotBtn.addEventListener('click', () => {
+                        cleanup(null);
+                        openResetPasswordModal(notebookId);
+                    });
+                }
             }
         }
         
@@ -901,8 +1063,8 @@ async function customConfirm(message, title = "Confirmation Required") {
 async function customPrompt(message, defaultValue = "", title = "Input Required") {
     return showCustomDialog({ title, message, isPrompt: true, defaultValue });
 }
-async function customPasswordPrompt(message, title = "Password Required") {
-    return showCustomDialog({ title, message, isPrompt: true, isPassword: true });
+async function customPasswordPrompt(message, title = "Password Required", notebookId = null) {
+    return showCustomDialog({ title, message, isPrompt: true, isPassword: true, notebookId });
 }
 
 window.alert = function(msg) {
@@ -924,7 +1086,7 @@ async function loadNotebooks() {
             if (activeNb && activeNb.is_private) {
                 let hash = sessionStorage.getItem(`notebook_pwd_${activeNotebookId}`);
                 if (!hash) {
-                    const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+                    const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:', 'Password Required', activeNotebookId);
                     if (pwd === null) {
                         showPrivateNotebookPlaceholder();
                         return;
@@ -961,6 +1123,7 @@ function showPrivateNotebookPlaceholder() {
     closeNoteEditor();
     renderStudyGuideView(null);
 }
+
 async function sha256(message) {
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -1008,7 +1171,7 @@ async function switchNotebook(id) {
         // Try cached session storage token first
         let hash = sessionStorage.getItem(`notebook_pwd_${id}`);
         if (!hash) {
-            const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+            const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:', 'Password Required', id);
             if (pwd === null) return; // user cancelled
             hash = await sha256(pwd);
             
@@ -1033,39 +1196,304 @@ async function switchNotebook(id) {
     closeNoteEditor();
 }
 
-async function createNotebook(name) {
-    const n = name || await customPrompt('Notebook name:');
-    if (!n) return;
+function openCreateNotebookModal() {
+    closeModals();
+    document.getElementById('newNotebookNameInput').value = '';
+    document.getElementById('createNbIsPrivateCheckbox').checked = false;
+    document.getElementById('createNbPassword').value = '';
+    document.getElementById('createNbConfirmPassword').value = '';
+    document.getElementById('createNbSecurityQuestionSelect').value = 'What was the name of your first pet?';
+    document.getElementById('createNbCustomQuestionInput').value = '';
+    document.getElementById('createNbSecurityAnswer').value = '';
+    document.getElementById('createNbPrivateFields').style.display = 'none';
+    document.getElementById('createNbCustomQuestionGroup').style.display = 'none';
+    openModal('createNotebook');
+    setTimeout(() => { document.getElementById('newNotebookNameInput').focus(); }, 100);
+}
 
-    const makePrivate = await customConfirm('Do you want to make this a private notebook?');
-    let isPrivate = 0;
-    let hash = null;
-    if (makePrivate) {
-        const pwd = await customPasswordPrompt('Create a password for this private notebook:');
-        if (!pwd) {
-            await customAlert('Password is required for private notebooks. Notebook creation cancelled.');
-            return;
-        }
-        isPrivate = 1;
-        hash = await sha256(pwd);
+function toggleCreateNotebookPrivateFields() {
+    const isPrivate = document.getElementById('createNbIsPrivateCheckbox').checked;
+    const fields = document.getElementById('createNbPrivateFields');
+    fields.style.display = isPrivate ? 'flex' : 'none';
+}
+
+function handleSecurityQuestionSelectChange() {
+    const val = document.getElementById('createNbSecurityQuestionSelect').value;
+    const customGroup = document.getElementById('createNbCustomQuestionGroup');
+    customGroup.style.display = (val === 'custom') ? 'block' : 'none';
+}
+
+async function submitCreateNotebook() {
+    const name = document.getElementById('newNotebookNameInput').value.trim();
+    if (!name) {
+        showToast('Please enter a notebook name', 'warning');
+        return;
     }
 
-    const r = await fetch(`${API}/api/notebooks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: n,
-            is_private: isPrivate,
-            password_hash: hash
-        })
-    });
+    const isPrivate = document.getElementById('createNbIsPrivateCheckbox').checked ? 1 : 0;
+    let passwordHash = null;
+    let securityQuestion = null;
+    let securityAnswerHash = null;
 
-    if (r.ok) {
-        const d = await r.json();
-        if (isPrivate) {
-            sessionStorage.setItem(`notebook_pwd_${d.id}`, hash);
+    if (isPrivate) {
+        const pwd = document.getElementById('createNbPassword').value;
+        const confirmPwd = document.getElementById('createNbConfirmPassword').value;
+        if (!pwd) {
+            showToast('Password is required for private notebooks', 'warning');
+            return;
         }
+        if (pwd !== confirmPwd) {
+            showToast('Passwords do not match', 'warning');
+            return;
+        }
+
+        const selQ = document.getElementById('createNbSecurityQuestionSelect').value;
+        if (selQ === 'custom') {
+            securityQuestion = document.getElementById('createNbCustomQuestionInput').value.trim();
+            if (!securityQuestion) {
+                showToast('Please enter your custom security question', 'warning');
+                return;
+            }
+        } else {
+            securityQuestion = selQ;
+        }
+
+        const answer = document.getElementById('createNbSecurityAnswer').value.trim();
+        if (!answer) {
+            showToast('Please provide an answer to your security question', 'warning');
+            return;
+        }
+
+        passwordHash = await sha256(pwd);
+        securityAnswerHash = await sha256(answer.toLowerCase());
+    }
+
+    try {
+        const r = await fetch(`${API}/api/notebooks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                is_private: isPrivate,
+                password_hash: passwordHash,
+                security_question: securityQuestion,
+                security_answer_hash: securityAnswerHash,
+            })
+        });
+
+        if (r.ok) {
+            const d = await r.json();
+            if (isPrivate && passwordHash) {
+                sessionStorage.setItem(`notebook_pwd_${d.id}`, passwordHash);
+            }
+            closeModals();
+            showToast('Notebook created successfully', 'info');
+            activeNotebookId = d.id;
+            await loadNotebooks();
+        } else {
+            const err = await r.json();
+            showToast(err.detail || 'Failed to create notebook', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+let resetNotebookId = null;
+let currentResetTab = 'question';
+
+async function openResetPasswordModal(notebookId) {
+    resetNotebookId = notebookId;
+    closeModals();
+    
+    document.getElementById('resetNewPasswordInput').value = '';
+    document.getElementById('resetConfirmPasswordInput').value = '';
+    document.getElementById('resetSecurityAnswerInput').value = '';
+    document.getElementById('resetMasterKeyInput').value = '';
+    document.getElementById('resetShowPasswordCheckbox').checked = false;
+    document.getElementById('resetNewPasswordInput').type = 'password';
+    document.getElementById('resetConfirmPasswordInput').type = 'password';
+    document.getElementById('resetPasswordStatus').innerHTML = '';
+    
+    try {
+        const res = await fetch(`${API}/api/notebooks/${notebookId}/security`);
+        if (!res.ok) throw new Error('Notebook security info unavailable');
+        const info = await res.json();
+        
+        document.getElementById('resetPwdNotebookName').textContent = `Notebook: ${info.name || 'Private Notebook'}`;
+        
+        const hasQuestion = info.has_security_question && info.security_question;
+        const questionDisplay = document.getElementById('resetSecurityQuestionDisplay');
+        const tabQuestionBtn = document.getElementById('resetTabQuestionBtn');
+        
+        if (hasQuestion) {
+            questionDisplay.textContent = `Q: ${info.security_question}`;
+            tabQuestionBtn.style.display = 'block';
+            switchResetPasswordTab('question');
+        } else {
+            tabQuestionBtn.style.display = 'none';
+            switchResetPasswordTab('master_key');
+        }
+        
+        openModal('resetPassword');
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function switchResetPasswordTab(tab) {
+    currentResetTab = tab;
+    const btnQ = document.getElementById('resetTabQuestionBtn');
+    const btnM = document.getElementById('resetTabMasterKeyBtn');
+    const secQ = document.getElementById('resetTabQuestionSection');
+    const secM = document.getElementById('resetTabMasterKeySection');
+    
+    if (tab === 'question') {
+        btnQ.style.background = 'var(--primary)';
+        btnQ.style.color = '#fff';
+        btnM.style.background = 'transparent';
+        btnM.style.color = 'var(--text-secondary)';
+        secQ.style.display = 'flex';
+        secM.style.display = 'none';
+    } else {
+        btnM.style.background = 'var(--primary)';
+        btnM.style.color = '#fff';
+        btnQ.style.background = 'transparent';
+        btnQ.style.color = 'var(--text-secondary)';
+        secQ.style.display = 'none';
+        secM.style.display = 'flex';
+    }
+}
+
+function toggleResetPasswordVisibility() {
+    const isShown = document.getElementById('resetShowPasswordCheckbox').checked;
+    const newPwdInput = document.getElementById('resetNewPasswordInput');
+    const confirmPwdInput = document.getElementById('resetConfirmPasswordInput');
+    newPwdInput.type = isShown ? 'text' : 'password';
+    confirmPwdInput.type = isShown ? 'text' : 'password';
+}
+
+async function submitResetPassword() {
+    if (!resetNotebookId) return;
+    
+    const newPwd = document.getElementById('resetNewPasswordInput').value;
+    const confirmPwd = document.getElementById('resetConfirmPasswordInput').value;
+    const statusEl = document.getElementById('resetPasswordStatus');
+    
+    if (!newPwd) {
+        statusEl.innerHTML = '<div class="status-msg status-error">Please enter a new password</div>';
+        return;
+    }
+    if (newPwd !== confirmPwd) {
+        statusEl.innerHTML = '<div class="status-msg status-error">New passwords do not match</div>';
+        return;
+    }
+    
+    let answerHash = null;
+    let masterKey = null;
+    
+    if (currentResetTab === 'question') {
+        const answer = document.getElementById('resetSecurityAnswerInput').value.trim();
+        if (!answer) {
+            statusEl.innerHTML = '<div class="status-msg status-error">Please enter the security answer</div>';
+            return;
+        }
+        answerHash = await sha256(answer.toLowerCase());
+    } else {
+        masterKey = document.getElementById('resetMasterKeyInput').value.trim();
+        if (!masterKey) {
+            statusEl.innerHTML = '<div class="status-msg status-error">Please enter your Master Recovery Key</div>';
+            return;
+        }
+    }
+    
+    statusEl.innerHTML = '<div class="status-msg status-loading">Resetting password...</div>';
+    
+    try {
+        const newPasswordHash = await sha256(newPwd);
+        const r = await fetch(`${API}/api/notebooks/${resetNotebookId}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                new_password_hash: newPasswordHash,
+                security_answer_hash: answerHash,
+                recovery_key: masterKey
+            })
+        });
+        
+        const data = await r.json();
+        if (!r.ok) {
+            statusEl.innerHTML = `<div class="status-msg status-error">✕ ${esc(data.detail || 'Reset failed')}</div>`;
+            return;
+        }
+        
+        sessionStorage.setItem(`notebook_pwd_${resetNotebookId}`, newPasswordHash);
+        showToast('Password reset successfully!', 'info');
+        closeModals();
+        
+        // Open/unlock the notebook immediately
+        activeNotebookId = resetNotebookId;
+        localStorage.setItem('active_notebook_id', resetNotebookId);
         await loadNotebooks();
+    } catch (e) {
+        statusEl.innerHTML = `<div class="status-msg status-error">✕ ${esc(e.message)}</div>`;
+    }
+}
+
+// Master Recovery Key Management
+let masterRecoveryKeyCache = "";
+let isRecoveryKeyVisible = false;
+
+async function loadMasterRecoveryKey() {
+    try {
+        const res = await fetch(`${API}/api/settings/recovery-key`);
+        const data = await res.json();
+        masterRecoveryKeyCache = data.recovery_key || "";
+        updateRecoveryKeyUI();
+    } catch (e) {
+        console.error("Failed to load master recovery key:", e);
+    }
+}
+
+function updateRecoveryKeyUI() {
+    const input = document.getElementById('settingsMasterRecoveryKey');
+    const icon = document.getElementById('recoveryKeyEyeIcon');
+    if (!input) return;
+    if (isRecoveryKeyVisible) {
+        input.type = 'text';
+        input.value = masterRecoveryKeyCache;
+        if (icon) icon.textContent = 'visibility_off';
+    } else {
+        input.type = 'password';
+        input.value = masterRecoveryKeyCache || 'CARNET-REC-••••••••';
+        if (icon) icon.textContent = 'visibility';
+    }
+}
+
+function toggleRecoveryKeyVisibility() {
+    isRecoveryKeyVisible = !isRecoveryKeyVisible;
+    updateRecoveryKeyUI();
+}
+
+async function copyMasterRecoveryKey() {
+    if (!masterRecoveryKeyCache) await loadMasterRecoveryKey();
+    if (masterRecoveryKeyCache) {
+        navigator.clipboard.writeText(masterRecoveryKeyCache);
+        showToast('Master Recovery Key copied to clipboard', 'info');
+    }
+}
+
+async function regenerateMasterRecoveryKeyUI() {
+    if (!await customConfirm('Are you sure you want to regenerate your Master Recovery Key? The previous key will no longer work.')) return;
+    try {
+        const res = await fetch(`${API}/api/settings/recovery-key/regenerate`, { method: 'POST' });
+        const data = await res.json();
+        masterRecoveryKeyCache = data.recovery_key;
+        isRecoveryKeyVisible = true;
+        updateRecoveryKeyUI();
+        showToast('New Master Recovery Key generated', 'info');
+    } catch (e) {
+        showToast('Failed to regenerate recovery key', 'error');
     }
 }
 
@@ -1073,7 +1501,7 @@ async function deleteNotebook(id) {
     const nb = notebooks.find(n => n.id === id);
     let hash = "";
     if (nb && nb.is_private) {
-        const pwd = await customPasswordPrompt('This notebook is private. Enter password to confirm deletion:');
+        const pwd = await customPasswordPrompt('This notebook is private. Enter password to confirm deletion:', 'Password Required', id);
         if (pwd === null) return;
         hash = await sha256(pwd);
         
@@ -2013,6 +2441,7 @@ function esc(s) { const d=document.createElement('div'); d.textContent=s||''; re
 function openModal(type) {
     closeModals();
     if (type === 'compare' && !openCompareModal()) return;
+    if (type === 'settings') loadMasterRecoveryKey();
     document.getElementById(`modal-${type}`).classList.add('active');
     ['uploadStatus','urlStatus','youtubeStatus','clipboardStatus','sourceViewerStatus','discoverStatus'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
     refreshIcons(document.getElementById(`modal-${type}`));
@@ -2220,10 +2649,16 @@ let editingConceptId = null;
 
 async function loadKnowledgeGraph() {
     if (!activeNotebookId) return;
-    const container = document.getElementById('graphContainer');
-    // Keep placeholder spinner clean
     const studyView = document.getElementById('flashcardStudyView');
-    studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:0.6"><div class="loading-spinner" style="margin-right:10px"></div> Loading study deck...</div>';
+    studyView.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;padding:2rem;text-align:center;">
+            <div class="guide-spinner"></div>
+            <div>
+                <div style="font-family:var(--font-headline);font-size:0.95rem;font-weight:600;color:var(--on-surface);margin-bottom:0.25rem;">Preparing Study Flashcards...</div>
+                <div style="font-size:0.8125rem;color:var(--secondary);">Extracting core concepts & active-recall prompts from your resources</div>
+            </div>
+        </div>
+    `;
 
     try {
         const r = await fetch(`${API}/api/concepts?notebook_id=${activeNotebookId}`);
@@ -2232,7 +2667,7 @@ async function loadKnowledgeGraph() {
         renderConceptBoard();
     } catch (e) {
         console.error(e);
-        studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red-primary)"><span class="material-symbols-outlined" style="margin-right:5px">error</span> Failed to load study deck</div>';
+        studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);gap:0.5rem;"><span class="material-symbols-outlined">error</span> Failed to load study deck</div>';
     }
 }
 
@@ -2247,14 +2682,14 @@ function setFlashcardView(mode) {
         btnStudy.style.background = 'var(--primary)';
         btnStudy.style.color = '#fff';
         btnManage.style.background = 'transparent';
-        btnManage.style.color = 'var(--text-secondary)';
+        btnManage.style.color = 'var(--secondary)';
         studyView.style.display = 'flex';
         manageView.style.display = 'none';
     } else {
         btnManage.style.background = 'var(--primary)';
         btnManage.style.color = '#fff';
         btnStudy.style.background = 'transparent';
-        btnStudy.style.color = 'var(--text-secondary)';
+        btnStudy.style.color = 'var(--secondary)';
         studyView.style.display = 'none';
         manageView.style.display = 'block';
     }
@@ -2336,25 +2771,53 @@ function renderConceptBoard() {
             activeFlashcardIndex = 0;
         }
         const card = currentConcepts[activeFlashcardIndex];
+        const progressPct = Math.round(((activeFlashcardIndex + 1) / currentConcepts.length) * 100);
 
         // Format link pills
-        const linkPills = card.links.map(l => `<span class="concept-link-pill active" style="cursor:default">${l}</span>`).join('');
+        const linkPills = card.links.map(l => `<span class="concept-link-pill active" style="cursor:default">${escapeHtml(l)}</span>`).join('');
+
+        const boxNames = { 1: 'Box 1: New', 2: 'Box 2: Learning', 3: 'Box 3: Familiar', 4: 'Box 4: Proficient', 5: 'Box 5: Mastered' };
+        const boxColors = { 1: '#f87171', 2: '#fbbf24', 3: '#818cf8', 4: '#a5b4fc', 5: '#34d399' };
+        const boxNum = card.leitner_box || 1;
+        const boxColor = boxColors[boxNum] || '#818cf8';
 
         studyView.innerHTML = `
-            <div class="flashcard-scene" onclick="flipFlashcard()">
+            <!-- Deck Progress Bar -->
+            <div style="width:100%;max-width:540px;display:flex;flex-direction:column;gap:0.4rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:var(--text-secondary);">
+                    <span style="font-weight:600;color:var(--text-primary);">Card ${activeFlashcardIndex + 1} of ${currentConcepts.length}</span>
+                    <span style="display:inline-flex;align-items:center;gap:0.35rem;background:${boxColor}18;color:${boxColor};padding:0.15rem 0.5rem;border-radius:999px;font-weight:600;font-size:0.7rem;border:1px solid ${boxColor}33;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:${boxColor};"></span> ${boxNames[boxNum] || 'Box 1'}
+                    </span>
+                    <span style="font-family:var(--font-mono);font-size:0.7rem;opacity:0.6;">${progressPct}% complete</span>
+                </div>
+                <div style="width:100%;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                    <div style="width:${progressPct}%;height:100%;background:var(--primary);border-radius:3px;transition:width 0.25s ease;"></div>
+                </div>
+            </div>
+
+            <div class="flashcard-scene" onclick="flipFlashcard()" style="max-width:540px;width:100%;cursor:pointer;">
                 <div class="flashcard-card ${flashcardFlipped ? 'is-flipped' : ''}">
                     <!-- Front -->
-                    <div class="flashcard-face flashcard-face-front">
-                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--primary);font-weight:700;letter-spacing:0.05em;">Recall Question</div>
-                        <div class="flashcard-text">${escapeHtml(card.title)}</div>
-                        <div style="font-size:0.75rem;opacity:0.4;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:12px">touch_app</span> Click card to flip</div>
+                    <div class="flashcard-face flashcard-face-front" style="padding:1.75rem;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+                            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--primary);font-weight:700;letter-spacing:0.06em;">Recall Question</div>
+                            <div style="font-size:0.7rem;opacity:0.4;font-family:var(--font-mono);">[Space to flip]</div>
+                        </div>
+                        <div class="flashcard-text" style="font-size:1.15rem;font-weight:600;line-height:1.4;margin:1.5rem 0;color:var(--text-primary);">${escapeHtml(card.title)}</div>
+                        <div style="font-size:0.75rem;opacity:0.45;display:flex;align-items:center;gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">touch_app</span> Click or press Space to reveal answer
+                        </div>
                     </div>
                     <!-- Back -->
-                    <div class="flashcard-face flashcard-face-back">
-                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--green-primary);font-weight:700;letter-spacing:0.05em;">Explanation / Answer</div>
-                        <div class="flashcard-text-back">${escapeHtml(card.explanation)}</div>
-                        <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:0.5rem;width:100%;margin-top:auto;">
-                            <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.4;margin-bottom:0.25rem;">Sources</div>
+                    <div class="flashcard-face flashcard-face-back" style="padding:1.75rem;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+                            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--success);font-weight:700;letter-spacing:0.06em;">Explanation & Answer</div>
+                            <div style="font-size:0.7rem;opacity:0.4;font-family:var(--font-mono);">[Space to flip back]</div>
+                        </div>
+                        <div class="flashcard-text-back" style="font-size:0.95rem;line-height:1.5;margin:1rem 0;color:var(--text-primary);overflow-y:auto;max-height:160px;">${escapeHtml(card.explanation)}</div>
+                        <div style="border-top:1px solid var(--border-subtle);padding-top:0.5rem;width:100%;margin-top:auto;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.45;margin-bottom:0.25rem;">Source Context</div>
                             <div style="display:flex;flex-wrap:wrap;gap:0.25rem">${linkPills || '<span style="font-size:0.7rem;opacity:0.3">None</span>'}</div>
                         </div>
                     </div>
@@ -2362,21 +2825,32 @@ function renderConceptBoard() {
             </div>
 
             <!-- Grade Actions (Fades in when flipped) -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;margin-top:0.5rem;min-height:90px;opacity: ${flashcardFlipped ? '1' : '0'};pointer-events:${flashcardFlipped ? 'all' : 'none'};transition:opacity 0.2s ease;">
-                <div style="font-size:0.75rem;opacity:0.6;font-weight:500;">How well did you recall this?</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;margin-top:0.25rem;min-height:80px;opacity: ${flashcardFlipped ? '1' : '0'};pointer-events:${flashcardFlipped ? 'all' : 'none'};transition:opacity 0.2s ease;">
+                <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:500;">How accurately did you recall this?</div>
                 <div style="display:flex;gap:0.75rem;">
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'hard')" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:0.4rem 1.25rem;border-radius:6px;">Hard</button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fcd34d;padding:0.4rem 1.25rem;border-radius:6px;">Good</button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:0.4rem 1.25rem;border-radius:6px;">Easy</button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'hard')" style="background:rgba(242,139,130,0.15);border:1px solid rgba(242,139,130,0.35);color:#f28b82;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 1">
+                        Hard <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[1]</span>
+                    </button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(253,214,99,0.15);border:1px solid rgba(253,214,99,0.35);color:#fdd663;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 2">
+                        Good <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[2]</span>
+                    </button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(129,201,149,0.15);border:1px solid rgba(129,201,149,0.35);color:#81c995;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 3">
+                        Easy <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[3]</span>
+                    </button>
                 </div>
-                <div style="font-size:0.7rem;opacity:0.4;margin-top:0.25rem;">Leitner Box level: ${card.leitner_box || 1} / 5</div>
             </div>
 
             <!-- Navigation Controls -->
-            <div style="display:flex;align-items:center;gap:1.5rem;margin-top:1rem;">
-                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(-1)" ${activeFlashcardIndex === 0 ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;"><span class="material-symbols-outlined" style="font-size:16px">chevron_left</span> Prev</button>
-                <span style="font-size:0.8rem;opacity:0.6;font-weight:500;">Card ${activeFlashcardIndex + 1} of ${currentConcepts.length}</span>
-                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(1)" ${activeFlashcardIndex + 1 === currentConcepts.length ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;">Next <span class="material-symbols-outlined" style="font-size:16px">chevron_right</span></button>
+            <div style="display:flex;align-items:center;gap:1.5rem;margin-top:0.5rem;">
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(-1)" ${activeFlashcardIndex === 0 ? 'disabled' : ''} style="display:flex;align-items:center;gap:0.25rem;height:32px;">
+                    <span class="material-symbols-outlined" style="font-size:16px">chevron_left</span> Previous
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="flipFlashcard()" style="font-size:0.75rem;display:flex;align-items:center;gap:0.25rem;">
+                    <span class="material-symbols-outlined" style="font-size:14px">flip</span> Flip Card
+                </button>
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(1)" ${activeFlashcardIndex + 1 === currentConcepts.length ? 'disabled' : ''} style="display:flex;align-items:center;gap:0.25rem;height:32px;">
+                    Next <span class="material-symbols-outlined" style="font-size:16px">chevron_right</span>
+                </button>
             </div>
         `;
     } else {
@@ -2394,14 +2868,14 @@ function renderConceptBoard() {
                 const isActive = c.links.includes(s.name);
                 if (isEditing) {
                     return `
-                        <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${s.name}')">
-                            ${s.name}
+                        <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${escapeHtml(s.name)}')">
+                            ${escapeHtml(s.name)}
                         </span>
                     `;
                 } else {
                     return isActive ? `
                         <span class="concept-link-pill active" style="cursor:default">
-                            ${s.name}
+                            ${escapeHtml(s.name)}
                         </span>
                     ` : '';
                 }
@@ -2441,7 +2915,8 @@ function renderConceptBoard() {
                                 ${pillsHtml || '<div style="font-size:0.75rem;opacity:0.3">No linked sources</div>'}
                             </div>
                         </div>
-                        <div style="display:flex;justify-content:flex-end;margin-top:auto;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                            <span style="font-size:0.7rem;color:var(--text-secondary);opacity:0.7;">Box ${c.leitner_box || 1} / 5</span>
                             <button class="btn btn-xs btn-soft" onclick="startEditingCard(${c.id})" style="font-size:0.7rem;padding:0.25rem 0.5rem;height:24px;display:inline-flex;align-items:center;gap:0.2rem;"><span class="material-symbols-outlined" style="font-size:12px">edit</span> Edit</button>
                         </div>
                     </div>
@@ -2449,7 +2924,7 @@ function renderConceptBoard() {
             }
         });
         
-        // Add statistics panel
+        // Add statistics panel with NotebookLM palette
         const counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
         currentConcepts.forEach(c => {
             let box = c.leitner_box || 1;
@@ -2458,7 +2933,7 @@ function renderConceptBoard() {
             counts[box]++;
         });
         
-        const colors = { 1: '#ffb4ab', 2: '#ffb77d', 3: '#ffd084', 4: '#c3c7cd', 5: '#88ddcc' };
+        const colors = { 1: '#f87171', 2: '#fbbf24', 3: '#818cf8', 4: '#a5b4fc', 5: '#34d399' };
         const labels = {
             1: 'Box 1: New / Hard',
             2: 'Box 2: Learning',
@@ -2507,7 +2982,13 @@ function renderConceptBoard() {
                         <button class="btn btn-sm btn-primary" onclick="setFlashcardView('study')" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
                             <span class="material-symbols-outlined" style="font-size:14px">play_arrow</span> Study Now
                         </button>
-                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(255,180,171,0.2);">
+                        <button class="btn btn-sm btn-soft" onclick="generateFullDeckDialog()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">auto_awesome</span> Generate AI Deck
+                        </button>
+                        <button class="btn btn-sm btn-soft" onclick="exportFlashcardsDeck()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">download</span> Export Deck
+                        </button>
+                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(242,139,130,0.3);">
                             <span class="material-symbols-outlined" style="font-size:14px">restart_alt</span> Reset Progress
                         </button>
                     </div>
@@ -2517,6 +2998,133 @@ function renderConceptBoard() {
         manageView.innerHTML = html;
         setupCardDragAndDrop();
     }
+}
+
+// Global Keyboard Shortcuts for Flashcards Study Mode
+document.addEventListener('keydown', (e) => {
+    // Only capture when on Flashcards tab in study mode and not typing in input/textarea
+    const graphTabActive = document.querySelector('.tab[data-tab="graph"]')?.classList.contains('active');
+    if (!graphTabActive || flashcardViewMode !== 'study' || !currentConcepts.length) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    if (e.code === 'Space' || e.key === 'Enter') {
+        e.preventDefault();
+        flipFlashcard();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        changeFlashcardIndex(-1);
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        changeFlashcardIndex(1);
+    } else if (flashcardFlipped && currentConcepts[activeFlashcardIndex]) {
+        const cardId = currentConcepts[activeFlashcardIndex].id;
+        if (e.key === '1') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'hard');
+        } else if (e.key === '2') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'good');
+        } else if (e.key === '3') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'easy');
+        }
+    }
+});
+
+async function generateFullDeckDialog() {
+    if (!activeNotebookId) {
+        showToast('Please select or create a notebook first', 'warn');
+        return;
+    }
+    const countStr = await customPrompt("How many flashcards would you like to generate from your documents? (5 - 20):", "10", "Generate Active Recall Deck");
+    if (!countStr) return;
+    const count = parseInt(countStr) || 10;
+
+    const topic = await customPrompt("Optional: Enter a specific topic or chapter focus (leave empty for entire notebook):", "", "Topic Focus (Optional)");
+
+    const btn = document.getElementById('btnAutoDeck');
+    const origText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="loading-spinner" style="width:12px;height:12px;border-width:2px;border-top-color:transparent;margin-right:4px;"></div> Generating...';
+    }
+
+    showToast(`Generating ${count} flashcards with AI...`, 'info');
+
+    try {
+        const res = await fetch(`${API}/api/concepts/generate-deck`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                count: count,
+                focus_topic: topic || null
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Deck generation failed');
+        }
+
+        const data = await res.json();
+        showToast(`Successfully created ${data.count} study flashcards!`, 'success');
+        await loadKnowledgeGraph();
+    } catch (e) {
+        console.error(e);
+        customAlert(e.message, 'Generation Failed');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+        }
+    }
+}
+
+async function exportFlashcardsDeck() {
+    if (!currentConcepts.length) {
+        showToast('Deck is empty — generate or add cards first.', 'warn');
+        return;
+    }
+
+    const choice = await customPrompt("Export format: Enter 'anki' for Anki CSV or 'md' for Markdown notes:", "anki", "Export Flashcard Deck");
+    if (!choice) return;
+
+    const nbName = (notebooks.find(n => n.id === activeNotebookId)?.name || 'notebook').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (choice.toLowerCase().includes('md') || choice.toLowerCase() === 'markdown') {
+        let md = `# Flashcard Deck — ${nbName}\nGenerated: ${new Date().toLocaleDateString()}\nTotal Cards: ${currentConcepts.length}\n\n---\n\n`;
+        currentConcepts.forEach((c, i) => {
+            md += `### ${i + 1}. ${c.title}\n\n**Answer / Explanation:**\n${c.explanation}\n\n*Leitner Box:* Level ${c.leitner_box || 1} / 5\n\n---\n\n`;
+        });
+        downloadFile(`${nbName}_flashcards.md`, md, 'text/markdown');
+        showToast('Deck exported as Markdown!', 'success');
+    } else {
+        // Anki CSV format (Tab-separated: Front \t Back \t Tags)
+        let csv = `#separator:tab\n#html:false\n#tags column:3\n`;
+        currentConcepts.forEach(c => {
+            const front = c.title.replace(/\t/g, ' ').replace(/\n/g, ' ');
+            const back = c.explanation.replace(/\t/g, ' ').replace(/\n/g, ' ');
+            const tag = `CarnetLM_${nbName}`;
+            csv += `${front}\t${back}\t${tag}\n`;
+        });
+        downloadFile(`${nbName}_anki_deck.txt`, csv, 'text/tab-separated-values');
+        showToast('Deck exported for Anki import!', 'success');
+    }
+}
+
+function downloadFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 200);
 }
 
 function escapeHtml(text) {
@@ -2766,7 +3374,7 @@ async function resetLeitnerProgress() {
 
 </script>
 
-<!-- ═══ Animated Blob Background Script ═══ -->
+<!-- ═══ Animated Ambient Aura Background Script ═══ -->
 <script>
 (function() {
     const container = document.getElementById('blobContainer');
@@ -2774,54 +3382,75 @@ async function resetLeitnerProgress() {
 
     const BLOBS_COUNT = 4;
     const state = {
-        mouse: { x: 0, y: 0, targetX: 0, targetY: 0 },
+        mouse: { x: window.innerWidth / 2, y: window.innerHeight / 2, targetX: window.innerWidth / 2, targetY: window.innerHeight / 2 },
         blobs: [],
         width: window.innerWidth,
         height: window.innerHeight
     };
 
-    const colors = ['#d97706', '#a38c7c', '#554336', '#ffb77d'];
-
-    for (let i = 0; i < BLOBS_COUNT; i++) {
-        const el = document.createElement('div');
-        el.className = 'blob';
-        const size = 300 + Math.random() * 400;
-        el.style.width = size + 'px';
-        el.style.height = size + 'px';
-        el.style.background = colors[i % colors.length];
-        el.style.opacity = '0.15';
-
-        const blob = {
-            el,
-            x: Math.random() * state.width,
-            y: Math.random() * state.height,
-            vx: (Math.random() - 0.5) * 1.5,
-            vy: (Math.random() - 0.5) * 1.5,
-            size,
-            factor: 0.01 + Math.random() * 0.02
-        };
-
-        state.blobs.push(blob);
-        container.appendChild(el);
+    function getBlobColors() {
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        return isLight 
+            ? ['#dadde8', '#eaecf3', '#c8cbd8', '#e2e4f0'] 
+            : ['#373a54', '#4a4d70', '#25273b', '#5c608a'];
     }
+
+    function initBlobs() {
+        container.innerHTML = '';
+        state.blobs = [];
+        const colors = getBlobColors();
+
+        for (let i = 0; i < BLOBS_COUNT; i++) {
+            const el = document.createElement('div');
+            el.className = 'blob';
+            const size = 420 + Math.random() * 320;
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+            el.style.background = colors[i % colors.length];
+
+            const blob = {
+                el,
+                x: Math.random() * (state.width - size * 0.5),
+                y: Math.random() * (state.height - size * 0.5),
+                vx: (Math.random() - 0.5) * 1.6,
+                vy: (Math.random() - 0.5) * 1.6,
+                size,
+                factor: 0.02 + (i * 0.012)
+            };
+
+            state.blobs.push(blob);
+            container.appendChild(el);
+        }
+    }
+
+    initBlobs();
+
+    // Listen to theme toggles to adjust blob colors
+    const observer = new MutationObserver(() => {
+        const colors = getBlobColors();
+        state.blobs.forEach((blob, i) => {
+            blob.el.style.background = colors[i % colors.length];
+        });
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     function update() {
         state.mouse.x += (state.mouse.targetX - state.mouse.x) * 0.05;
         state.mouse.y += (state.mouse.targetY - state.mouse.y) * 0.05;
 
-        state.blobs.forEach((blob, i) => {
+        state.blobs.forEach((blob) => {
             blob.x += blob.vx;
             blob.y += blob.vy;
 
-            if (blob.x < -blob.size) blob.vx *= -1;
-            if (blob.x > state.width) blob.vx *= -1;
-            if (blob.y < -blob.size) blob.vy *= -1;
-            if (blob.y > state.height) blob.vy *= -1;
+            if (blob.x < -blob.size * 0.35) { blob.x = -blob.size * 0.35; blob.vx *= -1; }
+            if (blob.x > state.width - blob.size * 0.65) { blob.x = state.width - blob.size * 0.65; blob.vx *= -1; }
+            if (blob.y < -blob.size * 0.35) { blob.y = -blob.size * 0.35; blob.vy *= -1; }
+            if (blob.y > state.height - blob.size * 0.65) { blob.y = state.height - blob.size * 0.65; blob.vy *= -1; }
 
-            const dx = (state.mouse.x - state.width / 2) * blob.factor * (i + 1);
-            const dy = (state.mouse.y - state.height / 2) * blob.factor * (i + 1);
+            const dx = (state.mouse.x - state.width / 2) * blob.factor;
+            const dy = (state.mouse.y - state.height / 2) * blob.factor;
 
-            blob.el.style.transform = `translate(${blob.x + dx}px, ${blob.y + dy}px)`;
+            blob.el.style.transform = `translate3d(${blob.x + dx}px, ${blob.y + dy}px, 0)`;
         });
 
         requestAnimationFrame(update);

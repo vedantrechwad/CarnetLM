@@ -14,7 +14,6 @@ Features:
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
-from functools import lru_cache
 
 import numpy as np
 
@@ -141,12 +140,18 @@ Rules:
             logger.info("RAG profile: fast (vector-only)")
             return dict(FAST_PROFILE)
 
-        ctx_size = self.llm_router.get_model_context_size()
+        # Active provider optimization: local Ollama should not make extra HyDE/rerank LLM calls
+        provider = self.llm_router.get_active_provider() if self.llm_router else "none"
+        ctx_size = self.llm_router.get_model_context_size() if self.llm_router else 4096
         profile = dict(get_context_profile(ctx_size))
         profile["use_hybrid"] = True
-        if ctx_size <= 32768:
+        
+        # Disable multi-pass LLM calls for local Ollama to guarantee fast response times (< 2 sec)
+        if provider == "ollama" or ctx_size <= 32768:
             profile["use_hyde"] = False
-        logger.info(f"Adaptive profile: {profile['label']} (model ctx: {ctx_size})")
+            profile["use_reranking"] = False
+            
+        logger.info(f"Adaptive profile: {profile['label']} (provider: {provider}, model ctx: {ctx_size})")
         return profile
 
     def _apply_hybrid_search(

@@ -56,6 +56,10 @@ class LLMRouter:
         self._ollama_process = None  # Track the subprocess we started
         self._gemini_client = None  # Reusable Gemini client
         self._force_provider = None  # User-selected provider override
+        self._ollama_check_cache: Optional[bool] = None  # Cached availability
+        self._ollama_check_time: float = 0.0  # Timestamp of last check
+        self._ollama_check_ttl: float = 30.0  # Re-check every 30 seconds
+        self._context_size_cache: Dict[str, int] = {}  # model_name -> context_size
 
         # Validate the key isn't a placeholder
         if self.gemini_api_key and "your_" in self.gemini_api_key.lower():
@@ -87,10 +91,13 @@ class LLMRouter:
                 self.ollama_model = model_names[0]
                 logger.info(f"Default model not found, auto-selected: {self.ollama_model}")
 
-        if self.ollama_available:
-            logger.info(f"LLM Router: Ollama available, active model: {self.ollama_model}")
+        if self.gemini_available:
+            self._force_provider = "gemini"
+            logger.info(f"LLM Router: Gemini active (primary). Ollama available: {self.ollama_available}")
+        elif self.ollama_available:
             self._force_provider = "ollama"
-        if not self.gemini_available and not self.ollama_available:
+            logger.info(f"LLM Router: Ollama active (fallback), active model: {self.ollama_model}")
+        else:
             logger.warning("LLM Router: No LLM provider available!")
 
     # ─── Ollama Management ─────────────────────────────────────────────────
@@ -114,10 +121,10 @@ class LLMRouter:
                     break
 
         if not ollama_path:
-            logger.warning("Ollama not found. Install from https://ollama.ai")
+            logger.info("Ollama executable not found on system.")
             return
 
-        logger.info(f"Starting Ollama from: {ollama_path}")
+        logger.info(f"Starting Ollama process from: {ollama_path}")
         try:
             # Start ollama serve as a background process
             self._ollama_process = subprocess.Popen(
@@ -127,25 +134,31 @@ class LLMRouter:
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
 
-            # Wait for it to be ready (up to 10 seconds)
-            for i in range(20):
-                time.sleep(0.5)
+            # Quick wait check (up to 1 second max to prevent server launch block)
+            for i in range(5):
+                time.sleep(0.2)
                 if self._check_ollama():
                     logger.info(f"Ollama started successfully (PID {self._ollama_process.pid})")
                     return
 
-            logger.warning("Ollama process started but not responding")
+            logger.info("Ollama process launched in background.")
 
         except Exception as e:
-            logger.warning(f"Failed to start Ollama: {e}")
+            logger.warning(f"Failed to start Ollama background process: {e}")
 
-    def _check_ollama(self) -> bool:
-        """Check if Ollama is running."""
+    def _check_ollama(self, force: bool = False) -> bool:
+        """Check if Ollama is running. Uses cached result unless force=True or TTL expired."""
+        now = time.time()
+        if not force and self._ollama_check_cache is not None and (now - self._ollama_check_time) < self._ollama_check_ttl:
+            return self._ollama_check_cache
         try:
-            r = self._http_client.get(f"{self.ollama_base_url}/api/tags", timeout=3.0)
-            return r.status_code == 200
+            r = self._http_client.get(f"{self.ollama_base_url}/api/tags", timeout=1.0)
+            result = r.status_code == 200
         except Exception:
-            return False
+            result = False
+        self._ollama_check_cache = result
+        self._ollama_check_time = now
+        return result
 
     def list_models(self) -> List[Dict[str, Any]]:
         """List all installed Ollama models."""
@@ -195,6 +208,7 @@ class LLMRouter:
             return False
         self.ollama_model = model_name
         self._force_provider = "ollama"  # User explicitly chose an Ollama model
+        self._context_size_cache.pop(model_name, None)  # Invalidate cache for new model
         logger.info(f"Active model switched to: {model_name}")
         return True
 
@@ -209,40 +223,31 @@ class LLMRouter:
     ) -> LLMResponse:
         """Generate a response. Respects user's model choice if set, otherwise Gemini-first."""
 
-        # If user explicitly chose Ollama, try Ollama first
-        if self._force_provider == "ollama":
-            self.ollama_available = self._check_ollama()
-            if self.ollama_available:
-                try:
-                    return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
-                except Exception as e:
-                    logger.warning(f"Ollama failed ({e}), trying Gemini fallback...")
-            # Fallback to Gemini
-            if self.gemini_available:
-                try:
-                    return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
-                except Exception as e:
-                    logger.error(f"Gemini also failed: {e}")
-                    raise
-        else:
-            # Offline-first: Ollama when available, else Gemini
-            self.ollama_available = self._check_ollama()
-            if self.ollama_available:
-                try:
-                    return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
-                except Exception as e:
-                    logger.warning(f"Ollama failed ({e}), trying Gemini fallback...")
+        provider = self.get_active_provider()
 
-            if self.gemini_available:
-                try:
+        # Try primary provider first
+        if provider == "ollama":
+            try:
+                return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+            except Exception as e:
+                logger.warning(f"Ollama failed ({e}), trying Gemini fallback...")
+                self._ollama_check_cache = None  # Force re-check next time
+                if self.gemini_available:
                     return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
-                except Exception as e:
-                    logger.error(f"Gemini also failed: {e}")
-                    raise
+                raise
 
-            raise ConnectionError(
-                "No LLM provider available. Set GEMINI_API_KEY in .env or start Ollama (ollama serve)."
-            )
+        if provider == "gemini":
+            try:
+                return self._generate_gemini(prompt, system_prompt, temperature, max_tokens)
+            except Exception as e:
+                logger.warning(f"Gemini failed ({e}), trying Ollama fallback...")
+                if self._check_ollama(force=True):
+                    return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+                raise
+
+        raise ConnectionError(
+            "No LLM provider available. Set GEMINI_API_KEY in .env or start Ollama (ollama serve)."
+        )
 
     def generate_stream(
         self,
@@ -287,7 +292,8 @@ class LLMRouter:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        num_ctx = self.get_model_context_size()
+        num_ctx = min(self.get_model_context_size(), 4096)
+        cpu_threads = max(1, os.cpu_count() or 4)
         payload = {
             "model": self.ollama_model,
             "messages": messages,
@@ -295,9 +301,10 @@ class LLMRouter:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": min(num_ctx, 32768),
+                "num_ctx": num_ctx,
+                "num_thread": cpu_threads,
             },
-            "keep_alive": "5m",
+            "keep_alive": "30m",
         }
 
         with self._http_client.stream(
@@ -379,7 +386,8 @@ class LLMRouter:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        num_ctx = self.get_model_context_size()
+        num_ctx = min(self.get_model_context_size(), 4096)
+        cpu_threads = max(1, os.cpu_count() or 4)
 
         payload = {
             "model": self.ollama_model,
@@ -388,9 +396,10 @@ class LLMRouter:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": min(num_ctx, 32768),
+                "num_ctx": num_ctx,
+                "num_thread": cpu_threads,
             },
-            "keep_alive": "5m",
+            "keep_alive": "30m",
         }
 
         response = self._http_client.post(
@@ -423,7 +432,7 @@ class LLMRouter:
 
     def health_check(self) -> Dict[str, Any]:
         """Check status of all providers."""
-        self.ollama_available = self._check_ollama()
+        self.ollama_available = self._check_ollama(force=True)
         status = {
             "gemini": {"available": self.gemini_available, "model": "gemini-2.5-flash"},
             "ollama": {"available": self.ollama_available},
@@ -478,15 +487,20 @@ class LLMRouter:
         return None
 
     def get_model_context_size(self) -> int:
-        """Get the context window size for the active model/provider."""
+        """Get the context window size for the active model/provider. Cached per model."""
         provider = self.get_active_provider()
 
         if provider == "gemini":
             return 1_000_000
 
         if provider == "ollama" and self.ollama_available:
+            cache_key = self.ollama_model
+            if cache_key in self._context_size_cache:
+                return self._context_size_cache[cache_key]
             detected = self._detect_ollama_context_size()
-            return resolve_context_size(self.ollama_model, detected)
+            size = resolve_context_size(self.ollama_model, detected)
+            self._context_size_cache[cache_key] = size
+            return size
 
         return 4096
 

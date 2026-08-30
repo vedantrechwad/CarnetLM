@@ -2,12 +2,13 @@
 title CarnetLM
 cd /d "%~dp0"
 
+:: Add common Python and UV paths to PATH if missing
+set "PATH=%LOCALAPPDATA%\Programs\Python\Python313\Scripts;%LOCALAPPDATA%\Programs\Python\Python313;%USERPROFILE%\.cargo\bin;%LOCALAPPDATA%\bin;%PATH%"
+
 echo.
-echo   ____                      _   _     __  __ 
-echo  / ___|__ _ _ __ _ __   ___| |_| |   |  \/  |
-echo | |   / _` | '__| '_ \ / _ \ __| |   | |\/| |
-echo | |__| (_| | |  | | | |  __/ |_| |___| |  | |
-echo  \____\__,_|_|  |_| |_|\___|\__|\_____|_|  |_|
+echo  ========================================
+echo             CarnetLM Server
+echo  ========================================
 echo.
 
 :: Check if uv is available
@@ -21,25 +22,37 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :: Kill any existing server on port 8000
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000.*LISTENING" 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr /r ":8000.*LISTENING" 2^>nul') do (
+    if not "%%a"=="0" taskkill /PID %%a /F >nul 2>&1
 )
 
-:: Sync/Install all dependencies declared in pyproject.toml
-echo Syncing and installing project dependencies...
-uv sync
-if %ERRORLEVEL% neq 0 (
-    echo [WARNING] 'uv sync' failed. Trying fallback 'uv pip install -r requirements.txt'...
-    uv pip install -r requirements.txt
+:: Create .env if missing
+if not exist ".env" (
+    if exist ".env.example" (
+        echo Creating .env from .env.example ...
+        copy ".env.example" ".env" >nul
+    )
 )
-echo.
+
+:: Sync/Install dependencies if .venv is missing or requested
+if not exist ".venv" (
+    echo Setting up environment and dependencies...
+    uv sync
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] 'uv sync' failed. Check pyproject.toml for issues.
+        pause
+        exit /b 1
+    )
+    echo.
+)
 
 echo Starting CarnetLM on http://localhost:8000
+echo Waiting for server to become ready...
 echo Press Ctrl+C to stop.
 echo.
 
-:: Run background browser opener
-start /b cmd /c "timeout /t 3 >nul && start "" http://localhost:8000"
+:: Automatically open browser only AFTER server is fully ready and responding
+start "" /b powershell -NoProfile -WindowStyle Hidden -Command "$url='http://127.0.0.1:8000/api/health'; for ($i=0; $i -lt 120; $i++) { try { $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1; if ($res.StatusCode -eq 200) { Start-Process 'http://localhost:8000'; break } } catch { Start-Sleep -Milliseconds 250 } }"
 
 :: Start the server in the foreground
 uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000
@@ -48,3 +61,4 @@ echo.
 echo [CarnetLM stopped]
 echo.
 pause
+

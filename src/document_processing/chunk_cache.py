@@ -1,6 +1,5 @@
 """Chunk cache - stores processed chunks by file checksum to avoid re-chunking."""
 
-import hashlib
 import json
 import logging
 import sqlite3

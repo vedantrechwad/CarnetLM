@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 import hashlib
 import sqlite3
 from pathlib import Path
@@ -293,7 +292,7 @@ class MilvusVectorDB:
                         return original_func(*args, **kwargs)
                     except Exception as e:
                         err_str = str(e)
-                        if "WinError 183" in err_str or "already exists" in err_str:
+                        if "WinError 183" in err_str or "FileExistsError" in err_str:
                             logger.warning(f"Milvus operation '{func_name}' failed with rename/lock error, cleaning temp files and retrying: {e}")
                             self._cleanup_temp_files()
                             return original_func(*args, **kwargs)
@@ -355,6 +354,14 @@ class MilvusVectorDB:
             if not self.collection_exists:
                 raise Exception("Collection does not exist. Setup collection first.")
             
+            try:
+                indexes = self.client.list_indexes(collection_name=self.collection_name)
+                if indexes:
+                    logger.info("Index already exists, skipping creation")
+                    return
+            except Exception:
+                pass
+
             index_params = self.client.prepare_index_params()
             
             if use_binary_quantization:
@@ -435,7 +442,8 @@ class MilvusVectorDB:
                 
                 # Check for existing chunks by content hash
                 if content_hashes:
-                    hash_filter = " or ".join([f'content_hash == "{h}"' for h in content_hashes.keys()])
+                    escaped_hashes = [f'"{h}"' for h in content_hashes.keys()]
+                    hash_filter = f"content_hash in [{', '.join(escaped_hashes)}]"
                     
                     try:
                         existing_chunks = self.client.query(
@@ -553,8 +561,9 @@ class MilvusVectorDB:
                 logger.info(f"[Milvus Search] allowed_chunk_ids count={len(allowed_chunk_ids)} for notebook_id={notebook_id}")
                 
                 if allowed_chunk_ids:
-                    # Build filter for allowed chunks
-                    chunk_filter = " or ".join([f'id == "{_escape_filter_string(cid)}"' for cid in allowed_chunk_ids])
+                    # Build fast 'in' filter for allowed chunks
+                    escaped_ids = [f'"{_escape_filter_string(cid)}"' for cid in allowed_chunk_ids]
+                    chunk_filter = f"id in [{', '.join(escaped_ids)}]"
                     if final_filter:
                         final_filter = f"({final_filter}) and ({chunk_filter})"
                     else:
@@ -629,8 +638,9 @@ class MilvusVectorDB:
                 logger.info(f"No chunks found for source '{source_file}'")
                 return []
             
-            # Build filter expression for chunk IDs
-            chunk_filter = " or ".join([f'id == "{_escape_filter_string(cid)}"' for cid in chunk_ids])
+            # Build fast 'in' filter expression for chunk IDs
+            escaped_ids = [f'"{_escape_filter_string(cid)}"' for cid in chunk_ids]
+            chunk_filter = f"id in [{', '.join(escaped_ids)}]"
             
             results = self.client.query(
                 collection_name=self.collection_name,
@@ -774,7 +784,7 @@ class MilvusVectorDB:
                     )
                 logger.info(f"Deleted {len(orphaned_chunks)} orphaned chunks from Milvus")
             else:
-                logger.info(f"No orphaned chunks to delete (all chunks still referenced)")
+                logger.info("No orphaned chunks to delete (all chunks still referenced)")
             
             return len(chunk_ids)
             
@@ -882,37 +892,4 @@ class MilvusVectorDB:
                 logger.info("Milvus client connection closed")
         except Exception as e:
             logger.error(f"Error closing connection: {str(e)}")
-
-
-if __name__ == "__main__":
-    from src.document_processing.doc_processor import DocumentProcessor
-    from src.embeddings.embedding_generator import EmbeddingGenerator
-    
-    doc_processor = DocumentProcessor()
-    embedding_generator = EmbeddingGenerator()
-    vector_db = MilvusVectorDB()
-    
-    try:
-        chunks = doc_processor.process_document("data/raft.pdf")
-        embedded_chunks = embedding_generator.generate_embeddings(chunks)
-        vector_db.create_index()
-        
-        inserted_ids = vector_db.insert_embeddings(embedded_chunks)
-        print(f"Inserted {len(inserted_ids)} embeddings")
-        
-        query_text = "What is the main topic?"
-        query_vector = embedding_generator.generate_query_embedding(query_text)
-        
-        search_results = vector_db.search(query_vector.tolist(), limit=5)
-        
-        for i, result in enumerate(search_results):
-            print(f"\nResult {i+1}:")
-            print(f"Score: {result['score']:.4f}")
-            print(f"Content: {result['content'][:200]}...")
-            print(f"Citation: {result['citation']}")
-        
-    except Exception as e:
-        print(f"Error in example: {e}")
-    
-    finally:
-        vector_db.close()
+

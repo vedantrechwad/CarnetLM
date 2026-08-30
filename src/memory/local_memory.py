@@ -10,7 +10,9 @@ import sqlite3
 import logging
 import threading
 import os
-from typing import Any, Dict, List, Optional
+import secrets
+import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -50,7 +52,9 @@ class LocalMemoryLayer:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 is_private INTEGER DEFAULT 0,
-                password_hash TEXT DEFAULT NULL
+                password_hash TEXT DEFAULT NULL,
+                security_question TEXT DEFAULT NULL,
+                security_answer_hash TEXT DEFAULT NULL
             )
         """)
 
@@ -66,6 +70,16 @@ class LocalMemoryLayer:
 
         try:
             cursor.execute("ALTER TABLE notebooks ADD COLUMN password_hash TEXT DEFAULT NULL")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE notebooks ADD COLUMN security_question TEXT DEFAULT NULL")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE notebooks ADD COLUMN security_answer_hash TEXT DEFAULT NULL")
         except Exception:
             pass
 
@@ -237,46 +251,142 @@ class LocalMemoryLayer:
 
     # ─── Notebooks ─────────────────────────────────────────────────────────
 
-    def create_notebook(self, name: str, is_private: int = 0, password_hash: Optional[str] = None) -> int:
+    def create_notebook(
+        self,
+        name: str,
+        is_private: int = 0,
+        password_hash: Optional[str] = None,
+        security_question: Optional[str] = None,
+        security_answer_hash: Optional[str] = None,
+    ) -> int:
         """Create a new notebook. Returns its ID."""
         with self._lock:
             cursor = self.conn.cursor()
             now = datetime.now().isoformat()
             cursor.execute(
-                "INSERT INTO notebooks (name, created_at, updated_at, is_private, password_hash) VALUES (?, ?, ?, ?, ?)",
-                (name, now, now, is_private, password_hash),
+                "INSERT INTO notebooks (name, created_at, updated_at, is_private, password_hash, security_question, security_answer_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, now, now, is_private, password_hash, security_question, security_answer_hash),
             )
             self.conn.commit()
             return cursor.lastrowid
 
     def list_notebooks(self) -> List[Dict[str, Any]]:
-        """List all notebooks."""
+        """List all notebooks with counts in a single query."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, name, created_at, updated_at, is_private, password_hash FROM notebooks ORDER BY updated_at DESC")
-        notebooks = []
-        for row in cursor.fetchall():
-            nb_id = row["id"]
-            # Get counts
-            cursor2 = self.conn.cursor()
-            cursor2.execute("SELECT COUNT(*) FROM sources WHERE notebook_id = ?", (nb_id,))
-            source_count = cursor2.fetchone()[0]
-            cursor2.execute("SELECT COUNT(*) FROM conversations WHERE notebook_id = ? AND role = 'user'", (nb_id,))
-            chat_count = cursor2.fetchone()[0]
-            cursor2.execute("SELECT COUNT(*) FROM notes WHERE notebook_id = ?", (nb_id,))
-            note_count = cursor2.fetchone()[0]
-
-            notebooks.append({
-                "id": nb_id,
+        cursor.execute("""
+            SELECT
+                n.id, n.name, n.created_at, n.updated_at, n.is_private, n.password_hash,
+                n.security_question,
+                CASE WHEN n.security_answer_hash IS NOT NULL AND n.security_answer_hash != '' THEN 1 ELSE 0 END AS has_security_question,
+                COALESCE(s.cnt, 0) AS source_count,
+                COALESCE(c.cnt, 0) AS chat_count,
+                COALESCE(nt.cnt, 0) AS note_count
+            FROM notebooks n
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM sources GROUP BY notebook_id) s
+                ON s.notebook_id = n.id
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM conversations WHERE role = 'user' GROUP BY notebook_id) c
+                ON c.notebook_id = n.id
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM notes GROUP BY notebook_id) nt
+                ON nt.notebook_id = n.id
+            ORDER BY n.updated_at DESC
+        """)
+        return [
+            {
+                "id": row["id"],
                 "name": row["name"],
-                "sources": source_count,
-                "chats": chat_count,
-                "notes": note_count,
+                "sources": row["source_count"],
+                "chats": row["chat_count"],
+                "notes": row["note_count"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "is_private": row["is_private"] or 0,
                 "password_hash": row["password_hash"],
-            })
-        return notebooks
+                "security_question": row["security_question"],
+                "has_security_question": bool(row["has_security_question"]),
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def get_notebook_security_info(self, notebook_id: int) -> Optional[Dict[str, Any]]:
+        """Get public security info for a notebook (e.g. security question prompt)."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, name, is_private, password_hash, security_question, security_answer_hash FROM notebooks WHERE id = ?",
+            (notebook_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "is_private": bool(row["is_private"]),
+            "has_password": bool(row["password_hash"]),
+            "security_question": row["security_question"],
+            "has_security_question": bool(row["security_answer_hash"]),
+        }
+
+    def reset_notebook_password(
+        self,
+        notebook_id: int,
+        new_password_hash: str,
+        security_answer_hash: Optional[str] = None,
+        recovery_key: Optional[str] = None,
+        new_security_question: Optional[str] = None,
+        new_security_answer_hash: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """Reset the password of a private notebook using security answer or master recovery key."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, is_private, password_hash, security_question, security_answer_hash FROM notebooks WHERE id = ?",
+            (notebook_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False, "Notebook not found"
+
+        authorized = False
+        master_key = self.get_master_recovery_key()
+        if recovery_key and recovery_key.strip().upper() == master_key.strip().upper():
+            authorized = True
+
+        if not authorized and security_answer_hash:
+            stored_answer_hash = row["security_answer_hash"]
+            if stored_answer_hash and stored_answer_hash.strip().lower() == security_answer_hash.strip().lower():
+                authorized = True
+
+        if not authorized:
+            return False, "Invalid security answer or recovery key"
+
+        with self._lock:
+            cursor = self.conn.cursor()
+            now = datetime.now().isoformat()
+            if new_security_question is not None or new_security_answer_hash is not None:
+                cursor.execute(
+                    "UPDATE notebooks SET password_hash = ?, security_question = ?, security_answer_hash = ?, updated_at = ? WHERE id = ?",
+                    (new_password_hash, new_security_question, new_security_answer_hash, now, notebook_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE notebooks SET password_hash = ?, updated_at = ? WHERE id = ?",
+                    (new_password_hash, now, notebook_id),
+                )
+            self.conn.commit()
+            return True, "Password reset successfully"
+
+    def get_master_recovery_key(self) -> str:
+        """Get or create the master recovery key."""
+        key = self.get_setting("master_recovery_key", "")
+        if not key:
+            key = f"CARNET-REC-{secrets.token_hex(3).upper()}-{secrets.token_hex(3).upper()}"
+            self.set_setting("master_recovery_key", key)
+        return key
+
+    def regenerate_master_recovery_key(self) -> str:
+        """Regenerate a new master recovery key."""
+        key = f"CARNET-REC-{secrets.token_hex(3).upper()}-{secrets.token_hex(3).upper()}"
+        self.set_setting("master_recovery_key", key)
+        return key
 
     def verify_notebook_password(self, notebook_id: int, password_hash: str) -> bool:
         """Verify password hash for private notebook."""
