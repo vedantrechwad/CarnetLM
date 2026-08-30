@@ -221,14 +221,16 @@
                     </div>
                     
                     <!-- AI Flashcard Generator Input -->
-                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:450px;">
-                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate flashcards (e.g. 'Test me on neuroplasticity')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex:1;max-width:480px;">
+                        <input type="text" class="input" id="conceptPromptInput" placeholder="Ask AI to generate a flashcard (e.g. 'Key takeaways on neural networks')..." style="padding:0.35rem 0.75rem;font-size:0.8rem;width:100%;height:32px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" onkeydown="if(event.key==='Enter') generateConceptCard()" />
                         <button class="btn btn-sm btn-primary" onclick="generateConceptCard()" id="btnGenerateConcept" style="height:32px;white-space:nowrap;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">smart_toy</span> Generate</button>
                     </div>
 
                     <div style="display:flex;gap:0.5rem">
-                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add Card</button>
-                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span> Refresh</button>
+                        <button class="btn btn-sm btn-primary" onclick="generateFullDeckDialog()" id="btnAutoDeck" style="background:var(--primary-container);color:#fff;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:14px">auto_awesome</span> Auto-Deck</button>
+                        <button class="btn btn-sm btn-soft" onclick="exportFlashcardsDeck()" title="Export Deck to Markdown / Anki CSV"><span class="material-symbols-outlined" style="font-size:14px">download</span> Export</button>
+                        <button class="btn btn-sm btn-soft" onclick="addConceptCard()"><span class="material-symbols-outlined" style="font-size:14px">add</span> Add</button>
+                        <button class="btn btn-sm btn-soft" onclick="loadKnowledgeGraph()"><span class="material-symbols-outlined" style="font-size:14px">refresh</span></button>
                     </div>
                 </div>
                 <div class="graph-container" id="graphContainer" style="flex:1;position:relative;background:var(--background);overflow-y:auto;display:flex;flex-direction:column;">
@@ -2220,10 +2222,16 @@ let editingConceptId = null;
 
 async function loadKnowledgeGraph() {
     if (!activeNotebookId) return;
-    const container = document.getElementById('graphContainer');
-    // Keep placeholder spinner clean
     const studyView = document.getElementById('flashcardStudyView');
-    studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;opacity:0.6"><div class="loading-spinner" style="margin-right:10px"></div> Loading study deck...</div>';
+    studyView.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;padding:2rem;text-align:center;">
+            <div class="guide-spinner"></div>
+            <div>
+                <div style="font-family:var(--font-headline);font-size:0.95rem;font-weight:600;color:var(--on-surface);margin-bottom:0.25rem;">Preparing Study Flashcards...</div>
+                <div style="font-size:0.8125rem;color:var(--secondary);">Extracting core concepts & active-recall prompts from your resources</div>
+            </div>
+        </div>
+    `;
 
     try {
         const r = await fetch(`${API}/api/concepts?notebook_id=${activeNotebookId}`);
@@ -2232,7 +2240,7 @@ async function loadKnowledgeGraph() {
         renderConceptBoard();
     } catch (e) {
         console.error(e);
-        studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red-primary)"><span class="material-symbols-outlined" style="margin-right:5px">error</span> Failed to load study deck</div>';
+        studyView.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);gap:0.5rem;"><span class="material-symbols-outlined">error</span> Failed to load study deck</div>';
     }
 }
 
@@ -2247,14 +2255,14 @@ function setFlashcardView(mode) {
         btnStudy.style.background = 'var(--primary)';
         btnStudy.style.color = '#fff';
         btnManage.style.background = 'transparent';
-        btnManage.style.color = 'var(--text-secondary)';
+        btnManage.style.color = 'var(--secondary)';
         studyView.style.display = 'flex';
         manageView.style.display = 'none';
     } else {
         btnManage.style.background = 'var(--primary)';
         btnManage.style.color = '#fff';
         btnStudy.style.background = 'transparent';
-        btnStudy.style.color = 'var(--text-secondary)';
+        btnStudy.style.color = 'var(--secondary)';
         studyView.style.display = 'none';
         manageView.style.display = 'block';
     }
@@ -2336,25 +2344,53 @@ function renderConceptBoard() {
             activeFlashcardIndex = 0;
         }
         const card = currentConcepts[activeFlashcardIndex];
+        const progressPct = Math.round(((activeFlashcardIndex + 1) / currentConcepts.length) * 100);
 
         // Format link pills
-        const linkPills = card.links.map(l => `<span class="concept-link-pill active" style="cursor:default">${l}</span>`).join('');
+        const linkPills = card.links.map(l => `<span class="concept-link-pill active" style="cursor:default">${escapeHtml(l)}</span>`).join('');
+
+        const boxNames = { 1: 'Box 1: New', 2: 'Box 2: Learning', 3: 'Box 3: Familiar', 4: 'Box 4: Proficient', 5: 'Box 5: Mastered' };
+        const boxColors = { 1: '#f87171', 2: '#fbbf24', 3: '#818cf8', 4: '#a5b4fc', 5: '#34d399' };
+        const boxNum = card.leitner_box || 1;
+        const boxColor = boxColors[boxNum] || '#818cf8';
 
         studyView.innerHTML = `
-            <div class="flashcard-scene" onclick="flipFlashcard()">
+            <!-- Deck Progress Bar -->
+            <div style="width:100%;max-width:540px;display:flex;flex-direction:column;gap:0.4rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:var(--text-secondary);">
+                    <span style="font-weight:600;color:var(--text-primary);">Card ${activeFlashcardIndex + 1} of ${currentConcepts.length}</span>
+                    <span style="display:inline-flex;align-items:center;gap:0.35rem;background:${boxColor}18;color:${boxColor};padding:0.15rem 0.5rem;border-radius:999px;font-weight:600;font-size:0.7rem;border:1px solid ${boxColor}33;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:${boxColor};"></span> ${boxNames[boxNum] || 'Box 1'}
+                    </span>
+                    <span style="font-family:var(--font-mono);font-size:0.7rem;opacity:0.6;">${progressPct}% complete</span>
+                </div>
+                <div style="width:100%;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                    <div style="width:${progressPct}%;height:100%;background:var(--primary);border-radius:3px;transition:width 0.25s ease;"></div>
+                </div>
+            </div>
+
+            <div class="flashcard-scene" onclick="flipFlashcard()" style="max-width:540px;width:100%;cursor:pointer;">
                 <div class="flashcard-card ${flashcardFlipped ? 'is-flipped' : ''}">
                     <!-- Front -->
-                    <div class="flashcard-face flashcard-face-front">
-                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--primary);font-weight:700;letter-spacing:0.05em;">Recall Question</div>
-                        <div class="flashcard-text">${escapeHtml(card.title)}</div>
-                        <div style="font-size:0.75rem;opacity:0.4;display:flex;align-items:center;gap:0.25rem;"><span class="material-symbols-outlined" style="font-size:12px">touch_app</span> Click card to flip</div>
+                    <div class="flashcard-face flashcard-face-front" style="padding:1.75rem;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+                            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--primary);font-weight:700;letter-spacing:0.06em;">Recall Question</div>
+                            <div style="font-size:0.7rem;opacity:0.4;font-family:var(--font-mono);">[Space to flip]</div>
+                        </div>
+                        <div class="flashcard-text" style="font-size:1.15rem;font-weight:600;line-height:1.4;margin:1.5rem 0;color:var(--text-primary);">${escapeHtml(card.title)}</div>
+                        <div style="font-size:0.75rem;opacity:0.45;display:flex;align-items:center;gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">touch_app</span> Click or press Space to reveal answer
+                        </div>
                     </div>
                     <!-- Back -->
-                    <div class="flashcard-face flashcard-face-back">
-                        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--green-primary);font-weight:700;letter-spacing:0.05em;">Explanation / Answer</div>
-                        <div class="flashcard-text-back">${escapeHtml(card.explanation)}</div>
-                        <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:0.5rem;width:100%;margin-top:auto;">
-                            <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.4;margin-bottom:0.25rem;">Sources</div>
+                    <div class="flashcard-face flashcard-face-back" style="padding:1.75rem;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+                            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--success);font-weight:700;letter-spacing:0.06em;">Explanation & Answer</div>
+                            <div style="font-size:0.7rem;opacity:0.4;font-family:var(--font-mono);">[Space to flip back]</div>
+                        </div>
+                        <div class="flashcard-text-back" style="font-size:0.95rem;line-height:1.5;margin:1rem 0;color:var(--text-primary);overflow-y:auto;max-height:160px;">${escapeHtml(card.explanation)}</div>
+                        <div style="border-top:1px solid var(--border-subtle);padding-top:0.5rem;width:100%;margin-top:auto;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.45;margin-bottom:0.25rem;">Source Context</div>
                             <div style="display:flex;flex-wrap:wrap;gap:0.25rem">${linkPills || '<span style="font-size:0.7rem;opacity:0.3">None</span>'}</div>
                         </div>
                     </div>
@@ -2362,21 +2398,32 @@ function renderConceptBoard() {
             </div>
 
             <!-- Grade Actions (Fades in when flipped) -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;margin-top:0.5rem;min-height:90px;opacity: ${flashcardFlipped ? '1' : '0'};pointer-events:${flashcardFlipped ? 'all' : 'none'};transition:opacity 0.2s ease;">
-                <div style="font-size:0.75rem;opacity:0.6;font-weight:500;">How well did you recall this?</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;margin-top:0.25rem;min-height:80px;opacity: ${flashcardFlipped ? '1' : '0'};pointer-events:${flashcardFlipped ? 'all' : 'none'};transition:opacity 0.2s ease;">
+                <div style="font-size:0.75rem;color:var(--text-secondary);font-weight:500;">How accurately did you recall this?</div>
                 <div style="display:flex;gap:0.75rem;">
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'hard')" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:0.4rem 1.25rem;border-radius:6px;">Hard</button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fcd34d;padding:0.4rem 1.25rem;border-radius:6px;">Good</button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:0.4rem 1.25rem;border-radius:6px;">Easy</button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'hard')" style="background:rgba(242,139,130,0.15);border:1px solid rgba(242,139,130,0.35);color:#f28b82;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 1">
+                        Hard <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[1]</span>
+                    </button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'good')" style="background:rgba(253,214,99,0.15);border:1px solid rgba(253,214,99,0.35);color:#fdd663;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 2">
+                        Good <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[2]</span>
+                    </button>
+                    <button class="btn btn-sm" onclick="event.stopPropagation();gradeFlashcard(${card.id}, 'easy')" style="background:rgba(129,201,149,0.15);border:1px solid rgba(129,201,149,0.35);color:#81c995;padding:0.4rem 1.25rem;border-radius:8px;font-weight:600;" title="Shortcut: Press 3">
+                        Easy <span style="font-size:0.65rem;opacity:0.6;margin-left:4px;">[3]</span>
+                    </button>
                 </div>
-                <div style="font-size:0.7rem;opacity:0.4;margin-top:0.25rem;">Leitner Box level: ${card.leitner_box || 1} / 5</div>
             </div>
 
             <!-- Navigation Controls -->
-            <div style="display:flex;align-items:center;gap:1.5rem;margin-top:1rem;">
-                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(-1)" ${activeFlashcardIndex === 0 ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;"><span class="material-symbols-outlined" style="font-size:16px">chevron_left</span> Prev</button>
-                <span style="font-size:0.8rem;opacity:0.6;font-weight:500;">Card ${activeFlashcardIndex + 1} of ${currentConcepts.length}</span>
-                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(1)" ${activeFlashcardIndex + 1 === currentConcepts.length ? 'disabled' : ''} style="display:flex;align-items:center;height:32px;">Next <span class="material-symbols-outlined" style="font-size:16px">chevron_right</span></button>
+            <div style="display:flex;align-items:center;gap:1.5rem;margin-top:0.5rem;">
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(-1)" ${activeFlashcardIndex === 0 ? 'disabled' : ''} style="display:flex;align-items:center;gap:0.25rem;height:32px;">
+                    <span class="material-symbols-outlined" style="font-size:16px">chevron_left</span> Previous
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="flipFlashcard()" style="font-size:0.75rem;display:flex;align-items:center;gap:0.25rem;">
+                    <span class="material-symbols-outlined" style="font-size:14px">flip</span> Flip Card
+                </button>
+                <button class="btn btn-sm btn-soft" onclick="changeFlashcardIndex(1)" ${activeFlashcardIndex + 1 === currentConcepts.length ? 'disabled' : ''} style="display:flex;align-items:center;gap:0.25rem;height:32px;">
+                    Next <span class="material-symbols-outlined" style="font-size:16px">chevron_right</span>
+                </button>
             </div>
         `;
     } else {
@@ -2394,14 +2441,14 @@ function renderConceptBoard() {
                 const isActive = c.links.includes(s.name);
                 if (isEditing) {
                     return `
-                        <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${s.name}')">
-                            ${s.name}
+                        <span class="concept-link-pill ${isActive ? 'active' : ''}" onclick="toggleConceptLink(${c.id}, '${escapeHtml(s.name)}')">
+                            ${escapeHtml(s.name)}
                         </span>
                     `;
                 } else {
                     return isActive ? `
                         <span class="concept-link-pill active" style="cursor:default">
-                            ${s.name}
+                            ${escapeHtml(s.name)}
                         </span>
                     ` : '';
                 }
@@ -2441,7 +2488,8 @@ function renderConceptBoard() {
                                 ${pillsHtml || '<div style="font-size:0.75rem;opacity:0.3">No linked sources</div>'}
                             </div>
                         </div>
-                        <div style="display:flex;justify-content:flex-end;margin-top:auto;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">
+                            <span style="font-size:0.7rem;color:var(--text-secondary);opacity:0.7;">Box ${c.leitner_box || 1} / 5</span>
                             <button class="btn btn-xs btn-soft" onclick="startEditingCard(${c.id})" style="font-size:0.7rem;padding:0.25rem 0.5rem;height:24px;display:inline-flex;align-items:center;gap:0.2rem;"><span class="material-symbols-outlined" style="font-size:12px">edit</span> Edit</button>
                         </div>
                     </div>
@@ -2449,7 +2497,7 @@ function renderConceptBoard() {
             }
         });
         
-        // Add statistics panel
+        // Add statistics panel with NotebookLM palette
         const counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
         currentConcepts.forEach(c => {
             let box = c.leitner_box || 1;
@@ -2458,7 +2506,7 @@ function renderConceptBoard() {
             counts[box]++;
         });
         
-        const colors = { 1: '#ffb4ab', 2: '#ffb77d', 3: '#ffd084', 4: '#c3c7cd', 5: '#88ddcc' };
+        const colors = { 1: '#f87171', 2: '#fbbf24', 3: '#818cf8', 4: '#a5b4fc', 5: '#34d399' };
         const labels = {
             1: 'Box 1: New / Hard',
             2: 'Box 2: Learning',
@@ -2507,7 +2555,13 @@ function renderConceptBoard() {
                         <button class="btn btn-sm btn-primary" onclick="setFlashcardView('study')" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
                             <span class="material-symbols-outlined" style="font-size:14px">play_arrow</span> Study Now
                         </button>
-                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(255,180,171,0.2);">
+                        <button class="btn btn-sm btn-soft" onclick="generateFullDeckDialog()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">auto_awesome</span> Generate AI Deck
+                        </button>
+                        <button class="btn btn-sm btn-soft" onclick="exportFlashcardsDeck()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem;">
+                            <span class="material-symbols-outlined" style="font-size:14px">download</span> Export Deck
+                        </button>
+                        <button class="btn btn-sm btn-soft btn-danger" onclick="resetLeitnerProgress()" style="width:100%; height:32px; font-size:0.8rem; display:flex; align-items:center; justify-content:center; gap:0.25rem; color:var(--error); border-color:rgba(242,139,130,0.3);">
                             <span class="material-symbols-outlined" style="font-size:14px">restart_alt</span> Reset Progress
                         </button>
                     </div>
@@ -2517,6 +2571,133 @@ function renderConceptBoard() {
         manageView.innerHTML = html;
         setupCardDragAndDrop();
     }
+}
+
+// Global Keyboard Shortcuts for Flashcards Study Mode
+document.addEventListener('keydown', (e) => {
+    // Only capture when on Flashcards tab in study mode and not typing in input/textarea
+    const graphTabActive = document.querySelector('.tab[data-tab="graph"]')?.classList.contains('active');
+    if (!graphTabActive || flashcardViewMode !== 'study' || !currentConcepts.length) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    if (e.code === 'Space' || e.key === 'Enter') {
+        e.preventDefault();
+        flipFlashcard();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        changeFlashcardIndex(-1);
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        changeFlashcardIndex(1);
+    } else if (flashcardFlipped && currentConcepts[activeFlashcardIndex]) {
+        const cardId = currentConcepts[activeFlashcardIndex].id;
+        if (e.key === '1') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'hard');
+        } else if (e.key === '2') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'good');
+        } else if (e.key === '3') {
+            e.preventDefault();
+            gradeFlashcard(cardId, 'easy');
+        }
+    }
+});
+
+async function generateFullDeckDialog() {
+    if (!activeNotebookId) {
+        showToast('Please select or create a notebook first', 'warn');
+        return;
+    }
+    const countStr = await customPrompt("How many flashcards would you like to generate from your documents? (5 - 20):", "10", "Generate Active Recall Deck");
+    if (!countStr) return;
+    const count = parseInt(countStr) || 10;
+
+    const topic = await customPrompt("Optional: Enter a specific topic or chapter focus (leave empty for entire notebook):", "", "Topic Focus (Optional)");
+
+    const btn = document.getElementById('btnAutoDeck');
+    const origText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="loading-spinner" style="width:12px;height:12px;border-width:2px;border-top-color:transparent;margin-right:4px;"></div> Generating...';
+    }
+
+    showToast(`Generating ${count} flashcards with AI...`, 'info');
+
+    try {
+        const res = await fetch(`${API}/api/concepts/generate-deck`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                notebook_id: activeNotebookId,
+                count: count,
+                focus_topic: topic || null
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Deck generation failed');
+        }
+
+        const data = await res.json();
+        showToast(`Successfully created ${data.count} study flashcards!`, 'success');
+        await loadKnowledgeGraph();
+    } catch (e) {
+        console.error(e);
+        customAlert(e.message, 'Generation Failed');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+        }
+    }
+}
+
+async function exportFlashcardsDeck() {
+    if (!currentConcepts.length) {
+        showToast('Deck is empty — generate or add cards first.', 'warn');
+        return;
+    }
+
+    const choice = await customPrompt("Export format: Enter 'anki' for Anki CSV or 'md' for Markdown notes:", "anki", "Export Flashcard Deck");
+    if (!choice) return;
+
+    const nbName = (notebooks.find(n => n.id === activeNotebookId)?.name || 'notebook').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (choice.toLowerCase().includes('md') || choice.toLowerCase() === 'markdown') {
+        let md = `# Flashcard Deck — ${nbName}\nGenerated: ${new Date().toLocaleDateString()}\nTotal Cards: ${currentConcepts.length}\n\n---\n\n`;
+        currentConcepts.forEach((c, i) => {
+            md += `### ${i + 1}. ${c.title}\n\n**Answer / Explanation:**\n${c.explanation}\n\n*Leitner Box:* Level ${c.leitner_box || 1} / 5\n\n---\n\n`;
+        });
+        downloadFile(`${nbName}_flashcards.md`, md, 'text/markdown');
+        showToast('Deck exported as Markdown!', 'success');
+    } else {
+        // Anki CSV format (Tab-separated: Front \t Back \t Tags)
+        let csv = `#separator:tab\n#html:false\n#tags column:3\n`;
+        currentConcepts.forEach(c => {
+            const front = c.title.replace(/\t/g, ' ').replace(/\n/g, ' ');
+            const back = c.explanation.replace(/\t/g, ' ').replace(/\n/g, ' ');
+            const tag = `CarnetLM_${nbName}`;
+            csv += `${front}\t${back}\t${tag}\n`;
+        });
+        downloadFile(`${nbName}_anki_deck.txt`, csv, 'text/tab-separated-values');
+        showToast('Deck exported for Anki import!', 'success');
+    }
+}
+
+function downloadFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 200);
 }
 
 function escapeHtml(text) {
@@ -2766,7 +2947,7 @@ async function resetLeitnerProgress() {
 
 </script>
 
-<!-- ═══ Animated Blob Background Script ═══ -->
+<!-- ═══ Animated Ambient Aura Background Script ═══ -->
 <script>
 (function() {
     const container = document.getElementById('blobContainer');
@@ -2774,54 +2955,75 @@ async function resetLeitnerProgress() {
 
     const BLOBS_COUNT = 4;
     const state = {
-        mouse: { x: 0, y: 0, targetX: 0, targetY: 0 },
+        mouse: { x: window.innerWidth / 2, y: window.innerHeight / 2, targetX: window.innerWidth / 2, targetY: window.innerHeight / 2 },
         blobs: [],
         width: window.innerWidth,
         height: window.innerHeight
     };
 
-    const colors = ['#d97706', '#a38c7c', '#554336', '#ffb77d'];
-
-    for (let i = 0; i < BLOBS_COUNT; i++) {
-        const el = document.createElement('div');
-        el.className = 'blob';
-        const size = 300 + Math.random() * 400;
-        el.style.width = size + 'px';
-        el.style.height = size + 'px';
-        el.style.background = colors[i % colors.length];
-        el.style.opacity = '0.15';
-
-        const blob = {
-            el,
-            x: Math.random() * state.width,
-            y: Math.random() * state.height,
-            vx: (Math.random() - 0.5) * 1.5,
-            vy: (Math.random() - 0.5) * 1.5,
-            size,
-            factor: 0.01 + Math.random() * 0.02
-        };
-
-        state.blobs.push(blob);
-        container.appendChild(el);
+    function getBlobColors() {
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        return isLight 
+            ? ['#dadde8', '#eaecf3', '#c8cbd8', '#e2e4f0'] 
+            : ['#373a54', '#4a4d70', '#25273b', '#5c608a'];
     }
+
+    function initBlobs() {
+        container.innerHTML = '';
+        state.blobs = [];
+        const colors = getBlobColors();
+
+        for (let i = 0; i < BLOBS_COUNT; i++) {
+            const el = document.createElement('div');
+            el.className = 'blob';
+            const size = 420 + Math.random() * 320;
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+            el.style.background = colors[i % colors.length];
+
+            const blob = {
+                el,
+                x: Math.random() * (state.width - size * 0.5),
+                y: Math.random() * (state.height - size * 0.5),
+                vx: (Math.random() - 0.5) * 1.6,
+                vy: (Math.random() - 0.5) * 1.6,
+                size,
+                factor: 0.02 + (i * 0.012)
+            };
+
+            state.blobs.push(blob);
+            container.appendChild(el);
+        }
+    }
+
+    initBlobs();
+
+    // Listen to theme toggles to adjust blob colors
+    const observer = new MutationObserver(() => {
+        const colors = getBlobColors();
+        state.blobs.forEach((blob, i) => {
+            blob.el.style.background = colors[i % colors.length];
+        });
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     function update() {
         state.mouse.x += (state.mouse.targetX - state.mouse.x) * 0.05;
         state.mouse.y += (state.mouse.targetY - state.mouse.y) * 0.05;
 
-        state.blobs.forEach((blob, i) => {
+        state.blobs.forEach((blob) => {
             blob.x += blob.vx;
             blob.y += blob.vy;
 
-            if (blob.x < -blob.size) blob.vx *= -1;
-            if (blob.x > state.width) blob.vx *= -1;
-            if (blob.y < -blob.size) blob.vy *= -1;
-            if (blob.y > state.height) blob.vy *= -1;
+            if (blob.x < -blob.size * 0.35) { blob.x = -blob.size * 0.35; blob.vx *= -1; }
+            if (blob.x > state.width - blob.size * 0.65) { blob.x = state.width - blob.size * 0.65; blob.vx *= -1; }
+            if (blob.y < -blob.size * 0.35) { blob.y = -blob.size * 0.35; blob.vy *= -1; }
+            if (blob.y > state.height - blob.size * 0.65) { blob.y = state.height - blob.size * 0.65; blob.vy *= -1; }
 
-            const dx = (state.mouse.x - state.width / 2) * blob.factor * (i + 1);
-            const dy = (state.mouse.y - state.height / 2) * blob.factor * (i + 1);
+            const dx = (state.mouse.x - state.width / 2) * blob.factor;
+            const dy = (state.mouse.y - state.height / 2) * blob.factor;
 
-            blob.el.style.transform = `translate(${blob.x + dx}px, ${blob.y + dy}px)`;
+            blob.el.style.transform = `translate3d(${blob.x + dx}px, ${blob.y + dy}px, 0)`;
         });
 
         requestAnimationFrame(update);

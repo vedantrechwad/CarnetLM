@@ -250,33 +250,37 @@ class LocalMemoryLayer:
             return cursor.lastrowid
 
     def list_notebooks(self) -> List[Dict[str, Any]]:
-        """List all notebooks."""
+        """List all notebooks with counts in a single query."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, name, created_at, updated_at, is_private, password_hash FROM notebooks ORDER BY updated_at DESC")
-        notebooks = []
-        for row in cursor.fetchall():
-            nb_id = row["id"]
-            # Get counts
-            cursor2 = self.conn.cursor()
-            cursor2.execute("SELECT COUNT(*) FROM sources WHERE notebook_id = ?", (nb_id,))
-            source_count = cursor2.fetchone()[0]
-            cursor2.execute("SELECT COUNT(*) FROM conversations WHERE notebook_id = ? AND role = 'user'", (nb_id,))
-            chat_count = cursor2.fetchone()[0]
-            cursor2.execute("SELECT COUNT(*) FROM notes WHERE notebook_id = ?", (nb_id,))
-            note_count = cursor2.fetchone()[0]
-
-            notebooks.append({
-                "id": nb_id,
+        cursor.execute("""
+            SELECT
+                n.id, n.name, n.created_at, n.updated_at, n.is_private, n.password_hash,
+                COALESCE(s.cnt, 0) AS source_count,
+                COALESCE(c.cnt, 0) AS chat_count,
+                COALESCE(nt.cnt, 0) AS note_count
+            FROM notebooks n
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM sources GROUP BY notebook_id) s
+                ON s.notebook_id = n.id
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM conversations WHERE role = 'user' GROUP BY notebook_id) c
+                ON c.notebook_id = n.id
+            LEFT JOIN (SELECT notebook_id, COUNT(*) AS cnt FROM notes GROUP BY notebook_id) nt
+                ON nt.notebook_id = n.id
+            ORDER BY n.updated_at DESC
+        """)
+        return [
+            {
+                "id": row["id"],
                 "name": row["name"],
-                "sources": source_count,
-                "chats": chat_count,
-                "notes": note_count,
+                "sources": row["source_count"],
+                "chats": row["chat_count"],
+                "notes": row["note_count"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "is_private": row["is_private"] or 0,
                 "password_hash": row["password_hash"],
-            })
-        return notebooks
+            }
+            for row in cursor.fetchall()
+        ]
 
     def verify_notebook_password(self, notebook_id: int, password_hash: str) -> bool:
         """Verify password hash for private notebook."""

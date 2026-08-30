@@ -13,39 +13,37 @@ class ChunkReferenceTracker:
     """Tracks which notebooks reference which chunks for proper deletion."""
     
     def __init__(self, db_path: str = "./data/chunk_references.db"):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_db()
     
     def _init_db(self):
         """Initialize SQLite database for chunk references."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS chunk_references (
-                    chunk_id TEXT NOT NULL,
-                    notebook_id INTEGER NOT NULL,
-                    source_file TEXT NOT NULL,
-                    PRIMARY KEY (chunk_id, notebook_id)
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON chunk_references(chunk_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_notebook_id ON chunk_references(notebook_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_source_file ON chunk_references(source_file)")
-            conn.commit()
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS chunk_references (
+                chunk_id TEXT NOT NULL,
+                notebook_id INTEGER NOT NULL,
+                source_file TEXT NOT NULL,
+                PRIMARY KEY (chunk_id, notebook_id)
+            )
+        """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON chunk_references(chunk_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_notebook_id ON chunk_references(notebook_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_source_file ON chunk_references(source_file)")
+        self.conn.commit()
     
     def add_reference(self, chunk_id: str, notebook_id: int, source_file: str) -> bool:
         """Add a notebook reference to a chunk."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.execute(
-                        """INSERT OR IGNORE INTO chunk_references 
-                           (chunk_id, notebook_id, source_file)
-                           VALUES (?, ?, ?)""",
-                        (chunk_id, notebook_id, source_file)
-                    )
-                    conn.commit()
+                self.conn.execute(
+                    """INSERT OR IGNORE INTO chunk_references 
+                       (chunk_id, notebook_id, source_file)
+                       VALUES (?, ?, ?)""",
+                    (chunk_id, notebook_id, source_file)
+                )
+                self.conn.commit()
                 return True
             except Exception as e:
                 logger.warning(f"Failed to add chunk reference: {e}")
@@ -55,15 +53,14 @@ class ChunkReferenceTracker:
         """Add multiple notebook references to chunks."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    for chunk_id in chunk_ids:
-                        conn.execute(
-                            """INSERT OR IGNORE INTO chunk_references 
-                               (chunk_id, notebook_id, source_file)
-                               VALUES (?, ?, ?)""",
-                            (chunk_id, notebook_id, source_file)
-                        )
-                    conn.commit()
+                for chunk_id in chunk_ids:
+                    self.conn.execute(
+                        """INSERT OR IGNORE INTO chunk_references 
+                           (chunk_id, notebook_id, source_file)
+                           VALUES (?, ?, ?)""",
+                        (chunk_id, notebook_id, source_file)
+                    )
+                self.conn.commit()
                 logger.info(f"Added {len(chunk_ids)} chunk references for notebook {notebook_id}")
                 return True
             except Exception as e:
@@ -74,13 +71,12 @@ class ChunkReferenceTracker:
         """Remove a notebook reference from a chunk."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    cursor = conn.execute(
-                        "DELETE FROM chunk_references WHERE chunk_id = ? AND notebook_id = ?",
-                        (chunk_id, notebook_id)
-                    )
-                    conn.commit()
-                    return cursor.rowcount > 0
+                cursor = self.conn.execute(
+                    "DELETE FROM chunk_references WHERE chunk_id = ? AND notebook_id = ?",
+                    (chunk_id, notebook_id)
+                )
+                self.conn.commit()
+                return cursor.rowcount > 0
             except Exception as e:
                 logger.warning(f"Failed to remove chunk reference: {e}")
                 return False
@@ -89,13 +85,12 @@ class ChunkReferenceTracker:
         """Get number of notebooks referencing a chunk."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    cursor = conn.execute(
-                        "SELECT COUNT(*) FROM chunk_references WHERE chunk_id = ?",
-                        (chunk_id,)
-                    )
-                    row = cursor.fetchone()
-                    return row[0] if row else 0
+                cursor = self.conn.execute(
+                    "SELECT COUNT(*) FROM chunk_references WHERE chunk_id = ?",
+                    (chunk_id,)
+                )
+                row = cursor.fetchone()
+                return row[0] if row else 0
             except Exception as e:
                 logger.warning(f"Failed to get reference count: {e}")
                 return 0
@@ -104,12 +99,11 @@ class ChunkReferenceTracker:
         """Get all notebook IDs that reference a chunk."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    cursor = conn.execute(
-                        "SELECT notebook_id FROM chunk_references WHERE chunk_id = ?",
-                        (chunk_id,)
-                    )
-                    return {row[0] for row in cursor.fetchall()}
+                cursor = self.conn.execute(
+                    "SELECT notebook_id FROM chunk_references WHERE chunk_id = ?",
+                    (chunk_id,)
+                )
+                return {row[0] for row in cursor.fetchall()}
             except Exception as e:
                 logger.warning(f"Failed to get notebooks for chunk: {e}")
                 return set()
@@ -119,12 +113,12 @@ class ChunkReferenceTracker:
         with self._lock:
             try:
                 if notebook_id is not None:
-                    cursor = sqlite3.connect(self.db_path).execute(
+                    cursor = self.conn.execute(
                         "SELECT chunk_id FROM chunk_references WHERE source_file = ? AND notebook_id = ?",
                         (source_file, notebook_id)
                     )
                 else:
-                    cursor = sqlite3.connect(self.db_path).execute(
+                    cursor = self.conn.execute(
                         "SELECT chunk_id FROM chunk_references WHERE source_file = ?",
                         (source_file,)
                     )
@@ -137,12 +131,11 @@ class ChunkReferenceTracker:
         """Get all chunk IDs referenced by a notebook."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    cursor = conn.execute(
-                        "SELECT chunk_id FROM chunk_references WHERE notebook_id = ?",
-                        (notebook_id,)
-                    )
-                    return {row[0] for row in cursor.fetchall()}
+                cursor = self.conn.execute(
+                    "SELECT chunk_id FROM chunk_references WHERE notebook_id = ?",
+                    (notebook_id,)
+                )
+                return {row[0] for row in cursor.fetchall()}
             except Exception as e:
                 logger.warning(f"Failed to get chunks for notebook: {e}")
                 return set()
@@ -151,22 +144,21 @@ class ChunkReferenceTracker:
         """Delete all references for a source file."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    if notebook_id is not None:
-                        cursor = conn.execute(
-                            "DELETE FROM chunk_references WHERE source_file = ? AND notebook_id = ?",
-                            (source_file, notebook_id)
-                        )
-                    else:
-                        cursor = conn.execute(
-                            "DELETE FROM chunk_references WHERE source_file = ?",
-                            (source_file,)
-                        )
-                    conn.commit()
-                    deleted = cursor.rowcount
-                    if deleted > 0:
-                        logger.info(f"Deleted {deleted} chunk references for source {source_file}")
-                    return deleted
+                if notebook_id is not None:
+                    cursor = self.conn.execute(
+                        "DELETE FROM chunk_references WHERE source_file = ? AND notebook_id = ?",
+                        (source_file, notebook_id)
+                    )
+                else:
+                    cursor = self.conn.execute(
+                        "DELETE FROM chunk_references WHERE source_file = ?",
+                        (source_file,)
+                    )
+                self.conn.commit()
+                deleted = cursor.rowcount
+                if deleted > 0:
+                    logger.info(f"Deleted {deleted} chunk references for source {source_file}")
+                return deleted
             except Exception as e:
                 logger.warning(f"Failed to delete chunk references: {e}")
                 return 0
@@ -175,16 +167,15 @@ class ChunkReferenceTracker:
         """Delete all references for a notebook."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    cursor = conn.execute(
-                        "DELETE FROM chunk_references WHERE notebook_id = ?",
-                        (notebook_id,)
-                    )
-                    conn.commit()
-                    deleted = cursor.rowcount
-                    if deleted > 0:
-                        logger.info(f"Deleted {deleted} chunk references for notebook {notebook_id}")
-                    return deleted
+                cursor = self.conn.execute(
+                    "DELETE FROM chunk_references WHERE notebook_id = ?",
+                    (notebook_id,)
+                )
+                self.conn.commit()
+                deleted = cursor.rowcount
+                if deleted > 0:
+                    logger.info(f"Deleted {deleted} chunk references for notebook {notebook_id}")
+                return deleted
             except Exception as e:
                 logger.warning(f"Failed to delete notebook chunk references: {e}")
                 return 0
@@ -193,15 +184,17 @@ class ChunkReferenceTracker:
         """Get chunks that have no notebook references."""
         with self._lock:
             try:
-                with sqlite3.connect(self.db_path) as conn:
-                    # Get all referenced chunks
-                    cursor = conn.execute("SELECT DISTINCT chunk_id FROM chunk_references")
-                    referenced_chunks = {row[0] for row in cursor.fetchall()}
-                    # Return chunks that exist but aren't referenced
-                    return all_chunk_ids - referenced_chunks
+                cursor = self.conn.execute("SELECT DISTINCT chunk_id FROM chunk_references")
+                referenced_chunks = {row[0] for row in cursor.fetchall()}
+                return all_chunk_ids - referenced_chunks
             except Exception as e:
                 logger.warning(f"Failed to get orphaned chunks: {e}")
                 return set()
+
+    def close(self) -> None:
+        """Close the persistent connection."""
+        if self.conn:
+            self.conn.close()
 
 
 # Global tracker instance

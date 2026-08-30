@@ -6,9 +6,7 @@ retrieval methods, significantly improving recall for specific terms.
 """
 
 import logging
-import re
 from typing import List, Dict, Any, Optional, Tuple
-from functools import lru_cache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
