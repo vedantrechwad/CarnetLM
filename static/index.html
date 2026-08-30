@@ -295,7 +295,7 @@
             <div class="sidebar-section">
                 <div class="sidebar-section-title">
                     Notebooks
-                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="createNotebook()" title="New Notebook">+ NEW</button>
+                    <button class="sidebar-add" style="width:auto;margin:0;padding:2px 8px;border:none;font-size:0.6875rem;" onclick="openCreateNotebookModal()" title="New Notebook">+ NEW</button>
                 </div>
             </div>
             <div class="sidebar-list custom-scrollbar" id="notebookList"></div>
@@ -491,8 +491,152 @@
             <div id="settingsTtsInfo" style="font-size:0.8125rem;color:var(--secondary)">Checking...</div>
         </div>
         <div class="settings-section">
+            <h4>Security & Master Recovery</h4>
+            <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.5rem; line-height:1.4;">
+                Use your Master Recovery Key to unlock or reset any private notebook if you forget its password.
+            </p>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <input class="input" id="settingsMasterRecoveryKey" type="password" readonly style="font-family:var(--font-mono); font-size:0.8125rem; letter-spacing:0.05em;" value="Loading...">
+                <button class="btn btn-soft btn-sm" id="toggleRecoveryKeyVisBtn" onclick="toggleRecoveryKeyVisibility()" title="Show/Hide Key">
+                    <span class="material-symbols-outlined" id="recoveryKeyEyeIcon" style="font-size:16px">visibility</span>
+                </button>
+                <button class="btn btn-soft btn-sm" onclick="copyMasterRecoveryKey()" title="Copy Key">
+                    <span class="material-symbols-outlined" style="font-size:16px">content_copy</span>
+                </button>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                <button class="btn btn-soft btn-sm" onclick="regenerateMasterRecoveryKeyUI()">Regenerate Master Key</button>
+            </div>
+        </div>
+        <div class="settings-section">
             <h4>System health</h4>
             <div class="health-dots" id="settingsHealth"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-createNotebook">
+    <div class="modal" style="max-width:480px">
+        <h3><span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">book</span> Create Notebook <button class="modal-close" onclick="closeModals()">&times;</button></h3>
+        <div class="input-group">
+            <label class="input-label">Notebook Name</label>
+            <input type="text" class="input" id="newNotebookNameInput" placeholder="e.g. Physics 101, Project X...">
+        </div>
+        
+        <div style="margin-top:1rem; border:1px solid var(--border-subtle); border-radius:var(--radius); padding:0.875rem; background:rgba(255,255,255,0.02);">
+            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; font-weight:600; cursor:pointer; user-select:none;">
+                <input type="checkbox" id="createNbIsPrivateCheckbox" onchange="toggleCreateNotebookPrivateFields()" style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                <span class="material-symbols-outlined" style="font-size:16px; color:var(--primary)">lock</span>
+                Private Notebook (Password Protected)
+            </label>
+            
+            <div id="createNbPrivateFields" style="display:none; margin-top:0.875rem; flex-direction:column; gap:0.75rem;">
+                <div class="input-group">
+                    <label class="input-label">Password</label>
+                    <input type="password" class="input" id="createNbPassword" placeholder="Enter a secure password">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Confirm Password</label>
+                    <input type="password" class="input" id="createNbConfirmPassword" placeholder="Re-enter password">
+                </div>
+                
+                <div class="input-group" style="margin-top:0.25rem;">
+                    <label class="input-label">Security Question (for Password Reset)</label>
+                    <select class="input" id="createNbSecurityQuestionSelect" onchange="handleSecurityQuestionSelectChange()">
+                        <option value="What was the name of your first pet?">What was the name of your first pet?</option>
+                        <option value="What city were you born in?">What city were you born in?</option>
+                        <option value="What is your favorite book or movie?">What is your favorite book or movie?</option>
+                        <option value="What was the name of your first school?">What was the name of your first school?</option>
+                        <option value="What is your secret phrase?">What is your secret phrase?</option>
+                        <option value="custom">Custom Security Question...</option>
+                    </select>
+                </div>
+                <div class="input-group" id="createNbCustomQuestionGroup" style="display:none;">
+                    <label class="input-label">Custom Question</label>
+                    <input type="text" class="input" id="createNbCustomQuestionInput" placeholder="Enter your custom security question">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Security Answer</label>
+                    <input type="text" class="input" id="createNbSecurityAnswer" placeholder="Answer to your security question">
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.4; background:rgba(var(--primary-rgb, 100,100,255), 0.08); padding:0.5rem 0.75rem; border-radius:6px; margin-top:0.25rem;">
+                    💡 <strong>Tip:</strong> If you forget this password, you can reset it via your security answer or your Master Recovery Key in Settings.
+                </div>
+            </div>
+        </div>
+        
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+            <button class="btn btn-ghost" onclick="closeModals()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateNotebook()">Create Notebook</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-resetPassword">
+    <div class="modal" style="max-width:460px">
+        <h3>
+            <span style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="material-symbols-outlined" style="font-size:18px; color:var(--primary)">lock_reset</span>
+                Reset Notebook Password
+            </span>
+            <button class="modal-close" onclick="closeModals()">&times;</button>
+        </h3>
+        
+        <div id="resetPwdNotebookName" style="font-size:0.8125rem; color:var(--text-secondary); margin-bottom:0.75rem; font-weight:500;"></div>
+        
+        <!-- Recovery Mode Switcher -->
+        <div id="resetTabContainer" style="display:flex; border:1px solid var(--border-subtle); border-radius:var(--radius); overflow:hidden; margin-bottom:1rem;">
+            <button id="resetTabQuestionBtn" class="btn btn-sm" onclick="switchResetPasswordTab('question')" style="flex:1; border-radius:0; border:none; background:var(--primary); color:#fff; font-size:0.75rem;">
+                Security Question
+            </button>
+            <button id="resetTabMasterKeyBtn" class="btn btn-sm" onclick="switchResetPasswordTab('master_key')" style="flex:1; border-radius:0; border:none; background:transparent; color:var(--text-secondary); font-size:0.75rem;">
+                Master Recovery Key
+            </button>
+        </div>
+        
+        <!-- Tab 1: Security Question -->
+        <div id="resetTabQuestionSection" style="display:flex; flex-direction:column; gap:0.75rem;">
+            <div id="resetSecurityQuestionDisplay" style="font-size:0.8125rem; font-weight:600; color:var(--text-primary); padding:0.6rem 0.75rem; background:rgba(255,255,255,0.04); border-radius:6px; border-left:3px solid var(--primary);">
+                Loading question...
+            </div>
+            <div class="input-group">
+                <label class="input-label">Your Security Answer</label>
+                <input type="text" class="input" id="resetSecurityAnswerInput" placeholder="Enter the answer you set earlier">
+            </div>
+        </div>
+        
+        <!-- Tab 2: Master Recovery Key -->
+        <div id="resetTabMasterKeySection" style="display:none; flex-direction:column; gap:0.75rem;">
+            <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.4;">
+                Enter your Master Recovery Key from Settings to reset this notebook.
+            </div>
+            <div class="input-group">
+                <label class="input-label">Master Recovery Key</label>
+                <input type="text" class="input" id="resetMasterKeyInput" placeholder="e.g. CARNET-REC-XXXX-XXXX" style="font-family:var(--font-mono); font-size:0.8125rem; text-transform:uppercase;">
+            </div>
+        </div>
+        
+        <!-- New Password Fields -->
+        <div style="display:flex; flex-direction:column; gap:0.75rem; margin-top:1rem; padding-top:0.875rem; border-top:1px solid var(--border-subtle);">
+            <div class="input-group">
+                <label class="input-label">New Password</label>
+                <input type="password" class="input" id="resetNewPasswordInput" placeholder="Enter new password">
+            </div>
+            <div class="input-group">
+                <label class="input-label">Confirm New Password</label>
+                <input type="password" class="input" id="resetConfirmPasswordInput" placeholder="Re-enter new password">
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.25rem;">
+                <input type="checkbox" id="resetShowPasswordCheckbox" onchange="toggleResetPasswordVisibility()" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
+                <label for="resetShowPasswordCheckbox" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Passwords</label>
+            </div>
+        </div>
+        
+        <div id="resetPasswordStatus" style="margin-top:0.5rem;"></div>
+        
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+            <button class="btn btn-ghost" onclick="closeModals()">Cancel</button>
+            <button class="btn btn-primary" id="submitResetPasswordBtn" onclick="submitResetPassword()">Reset & Open Notebook</button>
         </div>
     </div>
 </div>
@@ -796,7 +940,7 @@ async function appendToNoteAndOpen(noteId, enc) {
 }
 
 // Generic modal dialog manager
-function showCustomDialog({ title, message, isPrompt = false, isConfirm = false, isPassword = false, defaultValue = "" }) {
+function showCustomDialog({ title, message, isPrompt = false, isConfirm = false, isPassword = false, defaultValue = "", notebookId = null }) {
     return new Promise((resolve) => {
         let modal = document.getElementById('customDialogModal');
         if (!modal) {
@@ -810,10 +954,16 @@ function showCustomDialog({ title, message, isPrompt = false, isConfirm = false,
         let inputHtml = '';
         if (isPrompt) {
             const inputType = isPassword ? 'password' : 'text';
+            const forgotPwdBtnHtml = (isPassword && notebookId) ? `
+                <button type="button" id="customDialogForgotPwdBtn" class="btn btn-ghost btn-xs" style="font-size:0.75rem; color:var(--primary); padding:0.1rem 0.4rem; text-decoration:underline; cursor:pointer;">Forgot Password?</button>
+            ` : '';
             const toggleHtml = isPassword ? `
-                <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem;">
-                    <input type="checkbox" id="customDialogShowPassword" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
-                    <label for="customDialogShowPassword" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Password</label>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.75rem; width:100%;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" id="customDialogShowPassword" style="cursor:pointer; width:14px; height:14px; accent-color:var(--primary);">
+                        <label for="customDialogShowPassword" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; user-select:none;">Show Password</label>
+                    </div>
+                    ${forgotPwdBtnHtml}
                 </div>
             ` : '';
             inputHtml = `
@@ -867,9 +1017,19 @@ function showCustomDialog({ title, message, isPrompt = false, isConfirm = false,
             
             if (isPassword) {
                 const showPasswordCheckbox = document.getElementById('customDialogShowPassword');
-                showPasswordCheckbox.addEventListener('change', (e) => {
-                    inputEl.type = e.target.checked ? 'text' : 'password';
-                });
+                if (showPasswordCheckbox) {
+                    showPasswordCheckbox.addEventListener('change', (e) => {
+                        inputEl.type = e.target.checked ? 'text' : 'password';
+                    });
+                }
+                
+                const forgotBtn = document.getElementById('customDialogForgotPwdBtn');
+                if (forgotBtn && notebookId) {
+                    forgotBtn.addEventListener('click', () => {
+                        cleanup(null);
+                        openResetPasswordModal(notebookId);
+                    });
+                }
             }
         }
         
@@ -903,8 +1063,8 @@ async function customConfirm(message, title = "Confirmation Required") {
 async function customPrompt(message, defaultValue = "", title = "Input Required") {
     return showCustomDialog({ title, message, isPrompt: true, defaultValue });
 }
-async function customPasswordPrompt(message, title = "Password Required") {
-    return showCustomDialog({ title, message, isPrompt: true, isPassword: true });
+async function customPasswordPrompt(message, title = "Password Required", notebookId = null) {
+    return showCustomDialog({ title, message, isPrompt: true, isPassword: true, notebookId });
 }
 
 window.alert = function(msg) {
@@ -926,7 +1086,7 @@ async function loadNotebooks() {
             if (activeNb && activeNb.is_private) {
                 let hash = sessionStorage.getItem(`notebook_pwd_${activeNotebookId}`);
                 if (!hash) {
-                    const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+                    const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:', 'Password Required', activeNotebookId);
                     if (pwd === null) {
                         showPrivateNotebookPlaceholder();
                         return;
@@ -963,6 +1123,7 @@ function showPrivateNotebookPlaceholder() {
     closeNoteEditor();
     renderStudyGuideView(null);
 }
+
 async function sha256(message) {
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -1010,7 +1171,7 @@ async function switchNotebook(id) {
         // Try cached session storage token first
         let hash = sessionStorage.getItem(`notebook_pwd_${id}`);
         if (!hash) {
-            const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:');
+            const pwd = await customPasswordPrompt('This notebook is private. Enter password to open:', 'Password Required', id);
             if (pwd === null) return; // user cancelled
             hash = await sha256(pwd);
             
@@ -1035,39 +1196,304 @@ async function switchNotebook(id) {
     closeNoteEditor();
 }
 
-async function createNotebook(name) {
-    const n = name || await customPrompt('Notebook name:');
-    if (!n) return;
+function openCreateNotebookModal() {
+    closeModals();
+    document.getElementById('newNotebookNameInput').value = '';
+    document.getElementById('createNbIsPrivateCheckbox').checked = false;
+    document.getElementById('createNbPassword').value = '';
+    document.getElementById('createNbConfirmPassword').value = '';
+    document.getElementById('createNbSecurityQuestionSelect').value = 'What was the name of your first pet?';
+    document.getElementById('createNbCustomQuestionInput').value = '';
+    document.getElementById('createNbSecurityAnswer').value = '';
+    document.getElementById('createNbPrivateFields').style.display = 'none';
+    document.getElementById('createNbCustomQuestionGroup').style.display = 'none';
+    openModal('createNotebook');
+    setTimeout(() => { document.getElementById('newNotebookNameInput').focus(); }, 100);
+}
 
-    const makePrivate = await customConfirm('Do you want to make this a private notebook?');
-    let isPrivate = 0;
-    let hash = null;
-    if (makePrivate) {
-        const pwd = await customPasswordPrompt('Create a password for this private notebook:');
-        if (!pwd) {
-            await customAlert('Password is required for private notebooks. Notebook creation cancelled.');
-            return;
-        }
-        isPrivate = 1;
-        hash = await sha256(pwd);
+function toggleCreateNotebookPrivateFields() {
+    const isPrivate = document.getElementById('createNbIsPrivateCheckbox').checked;
+    const fields = document.getElementById('createNbPrivateFields');
+    fields.style.display = isPrivate ? 'flex' : 'none';
+}
+
+function handleSecurityQuestionSelectChange() {
+    const val = document.getElementById('createNbSecurityQuestionSelect').value;
+    const customGroup = document.getElementById('createNbCustomQuestionGroup');
+    customGroup.style.display = (val === 'custom') ? 'block' : 'none';
+}
+
+async function submitCreateNotebook() {
+    const name = document.getElementById('newNotebookNameInput').value.trim();
+    if (!name) {
+        showToast('Please enter a notebook name', 'warning');
+        return;
     }
 
-    const r = await fetch(`${API}/api/notebooks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: n,
-            is_private: isPrivate,
-            password_hash: hash
-        })
-    });
+    const isPrivate = document.getElementById('createNbIsPrivateCheckbox').checked ? 1 : 0;
+    let passwordHash = null;
+    let securityQuestion = null;
+    let securityAnswerHash = null;
 
-    if (r.ok) {
-        const d = await r.json();
-        if (isPrivate) {
-            sessionStorage.setItem(`notebook_pwd_${d.id}`, hash);
+    if (isPrivate) {
+        const pwd = document.getElementById('createNbPassword').value;
+        const confirmPwd = document.getElementById('createNbConfirmPassword').value;
+        if (!pwd) {
+            showToast('Password is required for private notebooks', 'warning');
+            return;
         }
+        if (pwd !== confirmPwd) {
+            showToast('Passwords do not match', 'warning');
+            return;
+        }
+
+        const selQ = document.getElementById('createNbSecurityQuestionSelect').value;
+        if (selQ === 'custom') {
+            securityQuestion = document.getElementById('createNbCustomQuestionInput').value.trim();
+            if (!securityQuestion) {
+                showToast('Please enter your custom security question', 'warning');
+                return;
+            }
+        } else {
+            securityQuestion = selQ;
+        }
+
+        const answer = document.getElementById('createNbSecurityAnswer').value.trim();
+        if (!answer) {
+            showToast('Please provide an answer to your security question', 'warning');
+            return;
+        }
+
+        passwordHash = await sha256(pwd);
+        securityAnswerHash = await sha256(answer.toLowerCase());
+    }
+
+    try {
+        const r = await fetch(`${API}/api/notebooks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                is_private: isPrivate,
+                password_hash: passwordHash,
+                security_question: securityQuestion,
+                security_answer_hash: securityAnswerHash,
+            })
+        });
+
+        if (r.ok) {
+            const d = await r.json();
+            if (isPrivate && passwordHash) {
+                sessionStorage.setItem(`notebook_pwd_${d.id}`, passwordHash);
+            }
+            closeModals();
+            showToast('Notebook created successfully', 'info');
+            activeNotebookId = d.id;
+            await loadNotebooks();
+        } else {
+            const err = await r.json();
+            showToast(err.detail || 'Failed to create notebook', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+let resetNotebookId = null;
+let currentResetTab = 'question';
+
+async function openResetPasswordModal(notebookId) {
+    resetNotebookId = notebookId;
+    closeModals();
+    
+    document.getElementById('resetNewPasswordInput').value = '';
+    document.getElementById('resetConfirmPasswordInput').value = '';
+    document.getElementById('resetSecurityAnswerInput').value = '';
+    document.getElementById('resetMasterKeyInput').value = '';
+    document.getElementById('resetShowPasswordCheckbox').checked = false;
+    document.getElementById('resetNewPasswordInput').type = 'password';
+    document.getElementById('resetConfirmPasswordInput').type = 'password';
+    document.getElementById('resetPasswordStatus').innerHTML = '';
+    
+    try {
+        const res = await fetch(`${API}/api/notebooks/${notebookId}/security`);
+        if (!res.ok) throw new Error('Notebook security info unavailable');
+        const info = await res.json();
+        
+        document.getElementById('resetPwdNotebookName').textContent = `Notebook: ${info.name || 'Private Notebook'}`;
+        
+        const hasQuestion = info.has_security_question && info.security_question;
+        const questionDisplay = document.getElementById('resetSecurityQuestionDisplay');
+        const tabQuestionBtn = document.getElementById('resetTabQuestionBtn');
+        
+        if (hasQuestion) {
+            questionDisplay.textContent = `Q: ${info.security_question}`;
+            tabQuestionBtn.style.display = 'block';
+            switchResetPasswordTab('question');
+        } else {
+            tabQuestionBtn.style.display = 'none';
+            switchResetPasswordTab('master_key');
+        }
+        
+        openModal('resetPassword');
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function switchResetPasswordTab(tab) {
+    currentResetTab = tab;
+    const btnQ = document.getElementById('resetTabQuestionBtn');
+    const btnM = document.getElementById('resetTabMasterKeyBtn');
+    const secQ = document.getElementById('resetTabQuestionSection');
+    const secM = document.getElementById('resetTabMasterKeySection');
+    
+    if (tab === 'question') {
+        btnQ.style.background = 'var(--primary)';
+        btnQ.style.color = '#fff';
+        btnM.style.background = 'transparent';
+        btnM.style.color = 'var(--text-secondary)';
+        secQ.style.display = 'flex';
+        secM.style.display = 'none';
+    } else {
+        btnM.style.background = 'var(--primary)';
+        btnM.style.color = '#fff';
+        btnQ.style.background = 'transparent';
+        btnQ.style.color = 'var(--text-secondary)';
+        secQ.style.display = 'none';
+        secM.style.display = 'flex';
+    }
+}
+
+function toggleResetPasswordVisibility() {
+    const isShown = document.getElementById('resetShowPasswordCheckbox').checked;
+    const newPwdInput = document.getElementById('resetNewPasswordInput');
+    const confirmPwdInput = document.getElementById('resetConfirmPasswordInput');
+    newPwdInput.type = isShown ? 'text' : 'password';
+    confirmPwdInput.type = isShown ? 'text' : 'password';
+}
+
+async function submitResetPassword() {
+    if (!resetNotebookId) return;
+    
+    const newPwd = document.getElementById('resetNewPasswordInput').value;
+    const confirmPwd = document.getElementById('resetConfirmPasswordInput').value;
+    const statusEl = document.getElementById('resetPasswordStatus');
+    
+    if (!newPwd) {
+        statusEl.innerHTML = '<div class="status-msg status-error">Please enter a new password</div>';
+        return;
+    }
+    if (newPwd !== confirmPwd) {
+        statusEl.innerHTML = '<div class="status-msg status-error">New passwords do not match</div>';
+        return;
+    }
+    
+    let answerHash = null;
+    let masterKey = null;
+    
+    if (currentResetTab === 'question') {
+        const answer = document.getElementById('resetSecurityAnswerInput').value.trim();
+        if (!answer) {
+            statusEl.innerHTML = '<div class="status-msg status-error">Please enter the security answer</div>';
+            return;
+        }
+        answerHash = await sha256(answer.toLowerCase());
+    } else {
+        masterKey = document.getElementById('resetMasterKeyInput').value.trim();
+        if (!masterKey) {
+            statusEl.innerHTML = '<div class="status-msg status-error">Please enter your Master Recovery Key</div>';
+            return;
+        }
+    }
+    
+    statusEl.innerHTML = '<div class="status-msg status-loading">Resetting password...</div>';
+    
+    try {
+        const newPasswordHash = await sha256(newPwd);
+        const r = await fetch(`${API}/api/notebooks/${resetNotebookId}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                new_password_hash: newPasswordHash,
+                security_answer_hash: answerHash,
+                recovery_key: masterKey
+            })
+        });
+        
+        const data = await r.json();
+        if (!r.ok) {
+            statusEl.innerHTML = `<div class="status-msg status-error">✕ ${esc(data.detail || 'Reset failed')}</div>`;
+            return;
+        }
+        
+        sessionStorage.setItem(`notebook_pwd_${resetNotebookId}`, newPasswordHash);
+        showToast('Password reset successfully!', 'info');
+        closeModals();
+        
+        // Open/unlock the notebook immediately
+        activeNotebookId = resetNotebookId;
+        localStorage.setItem('active_notebook_id', resetNotebookId);
         await loadNotebooks();
+    } catch (e) {
+        statusEl.innerHTML = `<div class="status-msg status-error">✕ ${esc(e.message)}</div>`;
+    }
+}
+
+// Master Recovery Key Management
+let masterRecoveryKeyCache = "";
+let isRecoveryKeyVisible = false;
+
+async function loadMasterRecoveryKey() {
+    try {
+        const res = await fetch(`${API}/api/settings/recovery-key`);
+        const data = await res.json();
+        masterRecoveryKeyCache = data.recovery_key || "";
+        updateRecoveryKeyUI();
+    } catch (e) {
+        console.error("Failed to load master recovery key:", e);
+    }
+}
+
+function updateRecoveryKeyUI() {
+    const input = document.getElementById('settingsMasterRecoveryKey');
+    const icon = document.getElementById('recoveryKeyEyeIcon');
+    if (!input) return;
+    if (isRecoveryKeyVisible) {
+        input.type = 'text';
+        input.value = masterRecoveryKeyCache;
+        if (icon) icon.textContent = 'visibility_off';
+    } else {
+        input.type = 'password';
+        input.value = masterRecoveryKeyCache || 'CARNET-REC-••••••••';
+        if (icon) icon.textContent = 'visibility';
+    }
+}
+
+function toggleRecoveryKeyVisibility() {
+    isRecoveryKeyVisible = !isRecoveryKeyVisible;
+    updateRecoveryKeyUI();
+}
+
+async function copyMasterRecoveryKey() {
+    if (!masterRecoveryKeyCache) await loadMasterRecoveryKey();
+    if (masterRecoveryKeyCache) {
+        navigator.clipboard.writeText(masterRecoveryKeyCache);
+        showToast('Master Recovery Key copied to clipboard', 'info');
+    }
+}
+
+async function regenerateMasterRecoveryKeyUI() {
+    if (!await customConfirm('Are you sure you want to regenerate your Master Recovery Key? The previous key will no longer work.')) return;
+    try {
+        const res = await fetch(`${API}/api/settings/recovery-key/regenerate`, { method: 'POST' });
+        const data = await res.json();
+        masterRecoveryKeyCache = data.recovery_key;
+        isRecoveryKeyVisible = true;
+        updateRecoveryKeyUI();
+        showToast('New Master Recovery Key generated', 'info');
+    } catch (e) {
+        showToast('Failed to regenerate recovery key', 'error');
     }
 }
 
@@ -1075,7 +1501,7 @@ async function deleteNotebook(id) {
     const nb = notebooks.find(n => n.id === id);
     let hash = "";
     if (nb && nb.is_private) {
-        const pwd = await customPasswordPrompt('This notebook is private. Enter password to confirm deletion:');
+        const pwd = await customPasswordPrompt('This notebook is private. Enter password to confirm deletion:', 'Password Required', id);
         if (pwd === null) return;
         hash = await sha256(pwd);
         
@@ -2015,6 +2441,7 @@ function esc(s) { const d=document.createElement('div'); d.textContent=s||''; re
 function openModal(type) {
     closeModals();
     if (type === 'compare' && !openCompareModal()) return;
+    if (type === 'settings') loadMasterRecoveryKey();
     document.getElementById(`modal-${type}`).classList.add('active');
     ['uploadStatus','urlStatus','youtubeStatus','clipboardStatus','sourceViewerStatus','discoverStatus'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
     refreshIcons(document.getElementById(`modal-${type}`));

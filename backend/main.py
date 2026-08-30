@@ -182,12 +182,21 @@ class NotebookCreate(BaseModel):
     name: str
     is_private: Optional[int] = 0
     password_hash: Optional[str] = None
+    security_question: Optional[str] = None
+    security_answer_hash: Optional[str] = None
 
 class NotebookRename(BaseModel):
     name: str
 
 class NotebookVerify(BaseModel):
     password_hash: str
+
+class NotebookResetPassword(BaseModel):
+    new_password_hash: str
+    security_answer_hash: Optional[str] = None
+    recovery_key: Optional[str] = None
+    new_security_question: Optional[str] = None
+    new_security_answer_hash: Optional[str] = None
 
 class NoteCreate(BaseModel):
     title: str
@@ -517,9 +526,20 @@ async def create_notebook(request: NotebookCreate):
     nb_id = _memory.create_notebook(
         name=request.name,
         is_private=request.is_private,
-        password_hash=request.password_hash
+        password_hash=request.password_hash,
+        security_question=request.security_question,
+        security_answer_hash=request.security_answer_hash,
     )
     return {"id": nb_id, "name": request.name, "status": "ok"}
+
+@app.get("/api/notebooks/{notebook_id}/security")
+async def get_notebook_security(notebook_id: int):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    info = _memory.get_notebook_security_info(notebook_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    return info
 
 @app.post("/api/notebooks/{notebook_id}/verify")
 async def verify_notebook_password(notebook_id: int, request: NotebookVerify):
@@ -527,6 +547,36 @@ async def verify_notebook_password(notebook_id: int, request: NotebookVerify):
         raise HTTPException(status_code=503, detail="Not initialized")
     success = _memory.verify_notebook_password(notebook_id, request.password_hash)
     return {"success": success}
+
+@app.post("/api/notebooks/{notebook_id}/reset-password")
+async def reset_notebook_password(notebook_id: int, request: NotebookResetPassword):
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    success, message = _memory.reset_notebook_password(
+        notebook_id=notebook_id,
+        new_password_hash=request.new_password_hash,
+        security_answer_hash=request.security_answer_hash,
+        recovery_key=request.recovery_key,
+        new_security_question=request.new_security_question,
+        new_security_answer_hash=request.new_security_answer_hash,
+    )
+    if not success:
+        raise HTTPException(status_code=403, detail=message)
+    return {"status": "ok", "message": message}
+
+@app.get("/api/settings/recovery-key")
+async def get_master_recovery_key():
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    key = _memory.get_master_recovery_key()
+    return {"recovery_key": key}
+
+@app.post("/api/settings/recovery-key/regenerate")
+async def regenerate_master_recovery_key():
+    if not _memory:
+        raise HTTPException(status_code=503, detail="Not initialized")
+    key = _memory.regenerate_master_recovery_key()
+    return {"recovery_key": key, "status": "ok"}
 
 @app.put("/api/notebooks/{notebook_id}")
 async def rename_notebook(notebook_id: int, request: NotebookRename):
