@@ -1816,6 +1816,7 @@ async function sendMessage(e) {
     const bubble = document.getElementById('streamBubble');
     let fullText = '';
     let sourcesUsed = [];
+    let _streamRafPending = false;
     try {
         const r = await fetch(`${API}/api/chat/stream`, {
             method: 'POST',
@@ -1850,16 +1851,31 @@ async function sendMessage(e) {
                     bubble.innerHTML = `<span class="retrieval-status">${esc(data.message)}</span><span class="stream-cursor"></span>`;
                 } else if (eventType === 'token' && data.text) {
                     fullText += data.text;
-                    bubble.textContent = fullText;  // Plain text, no formatting
-                    msgs.scrollTop = msgs.scrollHeight;
-                } else if (eventType === 'meta' || eventType === 'done') {
+                    // Throttled DOM update — batch token renders via rAF
+                    if (!_streamRafPending) {
+                        _streamRafPending = true;
+                        requestAnimationFrame(() => {
+                            bubble.textContent = fullText;
+                            msgs.scrollTop = msgs.scrollHeight;
+                            _streamRafPending = false;
+                        });
+                    }
+                } else if (eventType === 'meta') {
                     if (data.sources_used) sourcesUsed = data.sources_used;
-                    bubble.innerHTML = formatResponse(fullText, sourcesUsed) + '<span class="stream-cursor"></span>';
+                } else if (eventType === 'done') {
+                    if (data.sources_used) sourcesUsed = data.sources_used;
+                    // Final render with full formatting + math
+                    bubble.innerHTML = formatResponse(fullText, sourcesUsed);
                     renderMath(bubble);
                 } else if (eventType === 'error') {
                     throw new Error(data.message || 'Stream error');
                 }
             }
+        }
+        // Ensure final formatting is applied even if 'done' event was missed
+        if (fullText && bubble.textContent === fullText) {
+            bubble.innerHTML = formatResponse(fullText, sourcesUsed);
+            renderMath(bubble);
         }
         chatHistory.push({ role: 'assistant', content: fullText || 'No response', sources: sourcesUsed });
     } catch (err) {
@@ -2193,7 +2209,40 @@ window._citationData = {};
 let _citationCounter = 0;
 
 function formatResponse(text, sources) {
-    let html = esc(text);
+    // ── Step 1: Extract LaTeX math blocks before HTML-escaping ──────────
+    // Protects $...$ / $$...$$ / \(...\) / \[...\] from being corrupted by esc()
+    const mathPlaceholders = [];
+    let processedText = text;
+
+    // Display math first ($$...$$) — must come before inline ($...$)
+    processedText = processedText.replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
+        const id = `__MATH_${mathPlaceholders.length}__`;
+        mathPlaceholders.push(match);
+        return id;
+    });
+    // LaTeX display: \[...\]
+    processedText = processedText.replace(/\\\[([\s\S]+?)\\\]/g, (match) => {
+        const id = `__MATH_${mathPlaceholders.length}__`;
+        mathPlaceholders.push(match);
+        return id;
+    });
+    // Inline math ($...$) — avoid matching dollar amounts like $100
+    processedText = processedText.replace(/\$([^\$\n]+?)\$/g, (match) => {
+        const id = `__MATH_${mathPlaceholders.length}__`;
+        mathPlaceholders.push(match);
+        return id;
+    });
+    // LaTeX inline: \(...\)
+    processedText = processedText.replace(/\\\(([\s\S]+?)\\\)/g, (match) => {
+        const id = `__MATH_${mathPlaceholders.length}__`;
+        mathPlaceholders.push(match);
+        return id;
+    });
+
+    // ── Step 2: HTML-escape (safe now — math is placeholdered) ──────────
+    let html = esc(processedText);
+
+    // ── Step 3: Citation formatting ────────────────────────────────────
     html = html.replace(/\[(\d+)\]/g, (match, num) => {
         const cid = 'c' + (++_citationCounter);
         const src = sources?.find(s => s.reference === `[${num}]`) || sources?.[parseInt(num) - 1];
@@ -2208,9 +2257,17 @@ function formatResponse(text, sources) {
         }
         return `<span class="citation-ref">${num}</span>`;
     });
+
+    // ── Step 4: Markdown formatting ────────────────────────────────────
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     html = html.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+
+    // ── Step 5: Re-inject math blocks (unescaped) ──────────────────────
+    for (let i = 0; i < mathPlaceholders.length; i++) {
+        html = html.replace(`__MATH_${i}__`, mathPlaceholders[i]);
+    }
+
     return html;
 }
 
@@ -3228,10 +3285,15 @@ async function generateConceptCard() {
         });
         if (r.ok) {
             input.value = "";
+            showToast('Card generated successfully!', 'success');
             loadKnowledgeGraph();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            showToast(err.detail || 'Failed to generate card', 'error');
         }
     } catch (e) {
         console.error("Failed to generate concept card from prompt", e);
+        showToast('Network error while generating card', 'error');
     } finally {
         input.disabled = false;
         btn.disabled = false;

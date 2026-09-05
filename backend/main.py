@@ -1809,6 +1809,43 @@ class DeckGenerateRequest(BaseModel):
     count: int = 10
     focus_topic: Optional[str] = None
 
+def extract_json_from_llm_response(text: str) -> Any:
+    """Robustly extract JSON from LLM output, handling markdown blocks and leading/trailing text."""
+    text = text.strip()
+    
+    # Try to find a markdown code block containing JSON
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if match:
+        text = match.group(1).strip()
+        
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+        
+    # Fallback: find the first [ or { and the last ] or }
+    start_array = text.find('[')
+    end_array = text.rfind(']')
+    start_obj = text.find('{')
+    end_obj = text.rfind('}')
+    
+    start_idx = -1
+    end_idx = -1
+    if start_array != -1 and (start_obj == -1 or start_array < start_obj):
+        start_idx = start_array
+        end_idx = end_array
+    elif start_obj != -1:
+        start_idx = start_obj
+        end_idx = end_obj
+        
+    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+        try:
+            return json.loads(text[start_idx:end_idx+1])
+        except json.JSONDecodeError:
+            pass
+            
+    raise ValueError("Could not extract valid JSON from LLM response.")
+
 @app.post("/api/concepts/generate-deck")
 async def generate_flashcard_deck(request: DeckGenerateRequest):
     """Generate a batch of high-quality active recall flashcards from notebook documents."""
@@ -1870,17 +1907,8 @@ Respond ONLY with a valid JSON array in this exact format, with no other text or
             temperature=0.2,
             max_tokens=1500
         )
-        raw = res.content.strip()
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0].strip()
-
-        match = re.search(r'\[\s*\{.*\}\s*\]', raw, re.DOTALL)
-        if match:
-            raw = match.group(0)
-
-        cards_data = json.loads(raw)
+        
+        cards_data = extract_json_from_llm_response(res.content)
         created_cards = []
         source_links = list(sources_seen) if sources_seen else []
 
@@ -1962,17 +1990,8 @@ Output ONLY a raw JSON object:
             temperature=0.2,
             max_tokens=600
         )
-        raw_json = res.content.strip()
-        if "```json" in raw_json:
-            raw_json = raw_json.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_json:
-            raw_json = raw_json.split("```")[1].split("```")[0].strip()
-
-        match = re.search(r'\{.*\}', raw_json, re.DOTALL)
-        if match:
-            raw_json = match.group(0)
-
-        data = json.loads(raw_json)
+        
+        data = extract_json_from_llm_response(res.content)
         title = data.get("title", prompt_text).strip()
         explanation = data.get("explanation", "").strip()
 
@@ -2024,27 +2043,26 @@ Output ONLY a raw JSON object:
             "leitner_box": 1
         }
 
-@app.get("/api/concepts")
-async def get_concepts(notebook_id: int = Query(...)):
-    """Fetch all concepts for a notebook. If empty, automatically generate high-yield flashcards from uploaded sources."""
+def _auto_generate_concepts_task(notebook_id: int):
+    """Background task to generate initial flashcards."""
     if not _memory or not _llm_router:
-        raise HTTPException(status_code=503, detail="Not initialized")
-
-    concepts = _memory.list_concepts(notebook_id)
-    if not concepts:
+        return
+    
+    try:
         chunks = _memory.get_chunk_texts_by_notebook(notebook_id)
-        if chunks:
-            sources = _memory.get_sources(notebook_id)
-            source_name = sources[0]["name"] if sources else ""
+        if not chunks:
+            return
             
-            # Sample up to 6 chunks for instant generation
-            sampled = []
-            for c in chunks[:6]:
-                if c.get("content"):
-                    sampled.append(c["content"][:400])
-            source_content = "\n\n---\n\n".join(sampled)[:2400]
+        sources = _memory.get_sources(notebook_id)
+        source_name = sources[0]["name"] if sources else ""
+        
+        sampled = []
+        for c in chunks[:6]:
+            if c.get("content"):
+                sampled.append(c["content"][:400])
+        source_content = "\n\n---\n\n".join(sampled)[:2400]
 
-            prompt = f"""You are an elite tutor. Create 4 high-yield active-recall flashcards based on this source text:
+        prompt = f"""You are an elite tutor. Create 4 high-yield active-recall flashcards based on this source text:
 {source_content}
 
 Requirements:
@@ -2055,42 +2073,42 @@ Output ONLY a JSON array:
 [
   {{"title": "Question or Key Term", "explanation": "Clear, informative 2-3 sentence explanation."}}
 ]"""
-            try:
-                res = _llm_router.generate(
-                    prompt=prompt,
-                    system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array.",
-                    temperature=0.2,
-                    max_tokens=1000
+        res = _llm_router.generate(
+            prompt=prompt,
+            system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array.",
+            temperature=0.2,
+            max_tokens=1000
+        )
+        
+        initial_concepts = extract_json_from_llm_response(res.content)
+        for index, ic in enumerate(initial_concepts):
+            title = str(ic.get("title", "")).strip()
+            explanation = str(ic.get("explanation", "")).strip()
+            if title and explanation:
+                links = [source_name] if source_name else []
+                _memory.create_concept(
+                    notebook_id=notebook_id,
+                    title=title,
+                    explanation=explanation,
+                    links_json=json.dumps(links),
+                    x=50 + (index * 320),
+                    y=50,
+                    sort_order=index
                 )
-                raw_json = res.content.strip()
-                if "```json" in raw_json:
-                    raw_json = raw_json.split("```json")[1].split("```")[0].strip()
-                elif "```" in raw_json:
-                    raw_json = raw_json.split("```")[1].split("```")[0].strip()
+    except Exception as e:
+        logger.warning(f"Could not auto-generate initial concepts: {e}")
 
-                match = re.search(r'\[\s*\{.*\}\s*\]', raw_json, re.DOTALL)
-                if match:
-                    raw_json = match.group(0)
 
-                initial_concepts = json.loads(raw_json)
-                for index, ic in enumerate(initial_concepts):
-                    title = ic.get("title", "").strip()
-                    explanation = ic.get("explanation", "").strip()
-                    if title and explanation:
-                        links = [source_name] if source_name else []
-                        _memory.create_concept(
-                            notebook_id=notebook_id,
-                            title=title,
-                            explanation=explanation,
-                            links_json=json.dumps(links),
-                            x=50 + (index * 320),
-                            y=50,
-                            sort_order=index
-                        )
-                _memory.mark_concepts_generated(notebook_id)
-            except Exception as e:
-                logger.warning(f"Could not auto-generate initial concepts: {e}")
-            concepts = _memory.list_concepts(notebook_id)
+@app.get("/api/concepts")
+async def get_concepts(background_tasks: BackgroundTasks, notebook_id: int = Query(...)):
+    """Fetch all concepts for a notebook. If empty, automatically generate high-yield flashcards in background."""
+    if not _memory or not _llm_router:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    concepts = _memory.list_concepts(notebook_id)
+    if not concepts and not _memory.has_generated_concepts(notebook_id):
+        _memory.mark_concepts_generated(notebook_id)
+        background_tasks.add_task(_auto_generate_concepts_task, notebook_id)
 
     return {"concepts": concepts}
 
