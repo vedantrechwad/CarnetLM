@@ -1,0 +1,15 @@
+{
+    "init_memory_sec": 0.06442403793334961,
+    "init_llm_sec": 1.1787455081939697,
+    "llm_generate_sec": 3.8466989994049072,
+    "llm_tps": 25.996315286293576,
+    "llm_tokens_generated": 100,
+    "embedding_100_chunks_sec": 0.0029909610748291016,
+    "embedding_chunks_per_sec": 33434.06935033878,
+    "init_milvus_sec": 0.6673774719238281,
+    "milvus_insert_100_chunks_sec": 0.0657503604888916,
+    "milvus_search_sec": 1.423435926437378,
+    "init_rag_sec": 2.9325485229492188e-05,
+    "rag_end_to_end_query_sec": 1.837287425994873,
+    "rag_retrieval_count": 8
+}
