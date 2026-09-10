@@ -136,7 +136,7 @@ This normalization guarantees that Euclidean distance and cosine similarity are 
 $$\text{CosineSimilarity}(\mathbf{q}, \mathbf{d}) = \mathbf{q}_{norm} \cdot \mathbf{d}_{norm}$$
 
 ### 4.2 Embedded Vector Storage (Milvus Lite)
-Dense embeddings are indexed within an embedded Milvus Lite v3.0 database instance (`data/docchat.db`). Milvus Lite runs entirely in-process as a serverless local database, avoiding the computational overhead and operational complexity of running independent Docker containers or cloud clusters. The collection schema enforces strict typing:
+Dense embeddings are indexed within an embedded Milvus Lite v3.0 database instance (`data/carnetlm.db`). Milvus Lite runs entirely in-process as a serverless local database, avoiding the computational overhead and operational complexity of running independent Docker containers or cloud clusters. The collection schema enforces strict typing:
 
 $$\mathcal{S}_{milvus} = \langle \text{id: VARCHAR}, \text{vector: FLOAT\_VECTOR}(384), \text{content: VARCHAR}, \text{source\_file: VARCHAR}, \text{page\_number: INT32}, \text{chunk\_index: INT32}, \text{metadata: JSON}, \text{content\_hash: VARCHAR} \rangle$$
 

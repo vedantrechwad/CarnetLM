@@ -72,8 +72,8 @@ def _initialize():
     _doc_processor = DocumentProcessor()
     _embedding_generator = EmbeddingGenerator()
     _vector_db = MilvusVectorDB(
-        db_path="./data/docchat.db",
-        collection_name="docchat",
+        db_path="./data/carnetlm.db",
+        collection_name="carnetlm",
         embedding_dim=_embedding_generator.get_embedding_dimension(),
     )
     _web_scraper = WebScraper()

@@ -20,7 +20,7 @@ class YouTubeTranscriptExtractor:
     """Extract transcripts from YouTube videos using yt-dlp subtitles."""
 
     def __init__(self, chunking: Optional[ChunkingService] = None):
-        self.temp_dir = Path(tempfile.gettempdir()) / "docchat_yt"
+        self.temp_dir = Path(tempfile.gettempdir()) / "carnetlm_yt"
         self.temp_dir.mkdir(exist_ok=True)
         self.chunking = chunking or ChunkingService.from_preset("balanced")
 

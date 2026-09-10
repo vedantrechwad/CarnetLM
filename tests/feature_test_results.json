@@ -100,7 +100,7 @@
             "feature": "EasyOCR Image Text Extraction",
             "status": "PASSED",
             "duration_ms": 4260.65,
-            "details": "Extracted: 'DOCCHATOCR'"
+            "details": "Extracted: 'CARNETLMOCR'"
         },
         {
             "category": "Embeddings",
@@ -114,7 +114,7 @@
             "feature": "Milvus Lite Embedded Collection & Index",
             "status": "PASSED",
             "duration_ms": 677.23,
-            "details": "Path: C:\\Users\\vedan\\Desktop\\college projects\\Final_Year_Project\\tests\\benchmark_data\\test_env\\test_docchat.db"
+            "details": "Path: C:\\Users\\vedan\\Desktop\\college projects\\Final_Year_Project\\tests\\benchmark_data\\test_env\\test_carnetlm.db"
         },
         {
             "category": "Vector DB",

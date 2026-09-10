@@ -92,7 +92,7 @@ def benchmark():
     # 6. Init Milvus
     print("Initializing Milvus Vector DB...")
     start = time.time()
-    vdb_path = f"./tests/benchmark_data/docchat_{int(time.time())}.db"
+    vdb_path = f"./tests/benchmark_data/carnetlm_{int(time.time())}.db"
     vdb = MilvusVectorDB(db_path=vdb_path, collection_name="benchmark", embedding_dim=embedder.get_embedding_dimension())
     vdb.create_index(use_binary_quantization=False)
     results["init_milvus_sec"] = time.time() - start

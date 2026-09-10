@@ -1,7 +1,7 @@
 # SECTION IV & V: SYSTEM IMPLEMENTATION AND EXPERIMENTAL RESULTS
 
 > **Document Type**: Research Paper Sections (Publication Ready for IEEE / ACM Conference Format)  
-> **Topic**: Empirical Evaluation, Technical Implementation, and Performance Benchmarks of CarnetLM / DocChat  
+> **Topic**: Empirical Evaluation, Technical Implementation, and Performance Benchmarks of CarnetLM  
 > **Target Subsections**: Section IV (System Implementation) & Section V (Experimental Results and Discussion)  
 > **Hardware Testbed**: 13th Gen Intel(R) Core(TM) i7-13620H (10 Cores, 16 Threads), 16.0 GB Samsung DDR5 @ 5600 MHz, NVIDIA GeForce RTX 4050 Laptop GPU (6 GB GDDR6 VRAM, CUDA 13.2), Windows 11 Home Single Language (Build 26200)  
 > **Software Environment**: Python 3.13.0 (Native `uv` environment), Ollama Engine v0.5+, Milvus Lite v3.0, FastEmbed ONNX Runtime  
@@ -10,11 +10,11 @@
 
 ## IV. SYSTEM IMPLEMENTATION
 
-This section outlines the concrete software architecture, implementation specifics, and engineering decisions realized in the DocChat (CarnetLM) system. The implementation focuses on zero-cloud dependency, local confidential computation, and sub-millisecond retrieval mechanics.
+This section outlines the concrete software architecture, implementation specifics, and engineering decisions realized in the CarnetLM system. The implementation focuses on zero-cloud dependency, local confidential computation, and sub-millisecond retrieval mechanics.
 
 ```
 +--------------------------------------------------------------------------------------------------+
-|                                    DOCCHAT APPLICATION LAYER                                     |
+|                                    CARNETLM APPLICATION LAYER                                    |
 |     +----------------------------+  +----------------------------+  +----------------------+     |
 |     |  FastAPI ASGI REST API     |  | Server-Sent Events (SSE)   |  | Web UI & Note Editor |     |
 |     |  Endpoints & Auth Guard    |  | Token Stream Dispatcher    |  | Flashcard Review     |     |
@@ -22,7 +22,7 @@ This section outlines the concrete software architecture, implementation specifi
 +--------------------|-------------------------------|----------------------------|----------------+
                      |                               |                            |
 +--------------------v-------------------------------v----------------------------v----------------+
-|                               DOCCHAT CORE RETRIEVAL & RAG PIPELINES                             |
+|                               CARNETLM CORE RETRIEVAL & RAG PIPELINES                            |
 |                                                                                                  |
 |  +---------------------------+  +------------------------------+  +---------------------------+  |
 |  | Document Ingestion Engine |  | Hybrid Search & RRF Engine   |  | Spaced Repetition Engine  |  |
@@ -333,7 +333,7 @@ To evaluate production viability, an exhaustive automated test suite was constru
 
 ### H. Resource Footprint and Edge Viability
 
-To establish the feasibility of deploying DocChat on consumer-grade laptops and private enterprise workstations without dedicated cloud infrastructure, runtime memory and disk footprints were recorded.
+To establish the feasibility of deploying CarnetLM on consumer-grade laptops and private enterprise workstations without dedicated cloud infrastructure, runtime memory and disk footprints were recorded.
 
 #### TABLE X: Runtime Memory and Storage Footprint
 

@@ -1,5 +1,5 @@
 """
-Comprehensive Feature Verification Suite for CarnetLM / DocChat.
+Comprehensive Feature Verification Suite for CarnetLM.
 Tests each subsystem and feature individually, ensuring 100% functionality.
 All test artifacts are isolated in ./tests/benchmark_data/test_env/.
 """
@@ -324,7 +324,7 @@ def test_document_processing():
         from PIL import Image, ImageDraw
         img = Image.new('RGB', (200, 60), color=(255, 255, 255))
         d = ImageDraw.Draw(img)
-        d.text((10, 20), "DOCCHAT OCR", fill=(0, 0, 0))
+        d.text((10, 20), "CARNETLM OCR", fill=(0, 0, 0))
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         img_bytes = buf.getvalue()
@@ -362,7 +362,7 @@ def test_vector_and_embeddings():
 
     # 3.2 Milvus Lite Setup & Indexing
     t0 = time.time()
-    vdb_path = str(TEST_DIR / "test_docchat.db")
+    vdb_path = str(TEST_DIR / "test_carnetlm.db")
     try:
         vdb = MilvusVectorDB(db_path=vdb_path, collection_name="test_collection", embedding_dim=dim)
         vdb.create_index(use_binary_quantization=False)

@@ -38,7 +38,7 @@ CarnetLM is a private, local-first AI-powered document research assistant and Q&
 
 ### Backend (FastAPI API Server)
 - **Web Server**: FastAPI framework powered by Uvicorn.
-- **Vector Search**: Milvus Lite (embedded file-based database running from `data/docchat.db` — no standalone server installation needed).
+- **Vector Search**: Milvus Lite (embedded file-based database running from `data/carnetlm.db` — no standalone server installation needed).
 - **Embeddings Generator**: Local FastEmbed library (running `BAAI/bge-small-en-v1.5` transformer model).
 - **Hybrid Search**: BM25 keyword matching via the `bm25s` library.
 - **Data Storage**: SQLite engine (`data/memory.db`) for tracking notebook settings, study decks, notes, and password credentials.
@@ -205,7 +205,7 @@ Below is the directory of routes defined inside `backend/main.py`:
 
 ## Data Privacy Promise
 
-CarnetLM keeps all uploaded literature and generated memories secure. The databases (`memory.db` & `docchat.db`), source raw files, and RAG embeddings cache live strictly inside your local repository folder `data/` which is configured in `.gitignore`. Your data is never synced to GitHub, and pulling the latest updates from git maintains your completely clean local space.
+CarnetLM keeps all uploaded literature and generated memories secure. The databases (`memory.db` & `carnetlm.db`), source raw files, and RAG embeddings cache live strictly inside your local repository folder `data/` which is configured in `.gitignore`. Your data is never synced to GitHub, and pulling the latest updates from git maintains your completely clean local space.
 
 ---
 
