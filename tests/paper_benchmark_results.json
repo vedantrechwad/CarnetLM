@@ -1,0 +1,162 @@
+{
+    "metadata": {
+        "timestamp": "2026-09-10 12:20:54",
+        "llm_model": "qwen2.5:7b (Q4_K_M)",
+        "embedding_model": "BAAI/bge-small-en-v1.5 (384-dim ONNX)",
+        "vector_db": "Milvus Lite v3.0",
+        "sparse_retriever": "BM25s (BM25-Okapi)",
+        "reranker": "Reciprocal Rank Fusion (RRF, k=60)"
+    },
+    "chunking_benchmarks": {
+        "compact": {
+            "chunk_tokens": 256,
+            "overlap_tokens": 50,
+            "chunks_generated": 167,
+            "latency_ms": 0.59,
+            "throughput_chars_per_sec": 204890155.72,
+            "throughput_chunks_per_sec": 283955.65
+        },
+        "balanced": {
+            "chunk_tokens": 384,
+            "overlap_tokens": 100,
+            "chunks_generated": 125,
+            "latency_ms": 0.61,
+            "throughput_chars_per_sec": 197469764.5,
+            "throughput_chunks_per_sec": 204844.15
+        },
+        "dense": {
+            "chunk_tokens": 480,
+            "overlap_tokens": 150,
+            "chunks_generated": 94,
+            "latency_ms": 0.43,
+            "throughput_chars_per_sec": 278728721.18,
+            "throughput_chunks_per_sec": 217431.53
+        }
+    },
+    "embedding_benchmarks": {
+        "batch_1": {
+            "batch_size": 1,
+            "total_latency_ms": 0.11,
+            "latency_per_chunk_ms": 0.11,
+            "throughput_chunks_per_sec": 9328.36
+        },
+        "batch_8": {
+            "batch_size": 8,
+            "total_latency_ms": 0.23,
+            "latency_per_chunk_ms": 0.03,
+            "throughput_chunks_per_sec": 34891.84
+        },
+        "batch_16": {
+            "batch_size": 16,
+            "total_latency_ms": 0.36,
+            "latency_per_chunk_ms": 0.02,
+            "throughput_chunks_per_sec": 44710.22
+        },
+        "batch_32": {
+            "batch_size": 32,
+            "total_latency_ms": 0.87,
+            "latency_per_chunk_ms": 0.03,
+            "throughput_chunks_per_sec": 36871.46
+        },
+        "batch_64": {
+            "batch_size": 64,
+            "total_latency_ms": 1.29,
+            "latency_per_chunk_ms": 0.02,
+            "throughput_chunks_per_sec": 49640.11
+        }
+    },
+    "retrieval_latency_benchmarks": {
+        "dense_milvus": {
+            "k_1": 20.89,
+            "k_5": 19.422,
+            "k_10": 19.448,
+            "k_20": 21.313
+        },
+        "sparse_bm25": {
+            "k_1": 0.204,
+            "k_5": 0.2,
+            "k_10": 0.221,
+            "k_20": 0.281
+        },
+        "hybrid_rrf": {
+            "k_1": 19.645,
+            "k_5": 20.06,
+            "k_10": 22.513,
+            "k_20": 22.177
+        }
+    },
+    "ir_evaluation_metrics": {
+        "dense_only": {
+            "hit_rate@1": 1.0,
+            "hit_rate@3": 1.0,
+            "hit_rate@5": 1.0,
+            "mrr@1": 1.0,
+            "mrr@3": 1.0,
+            "mrr@5": 1.0,
+            "precision@1": 1.0,
+            "precision@3": 1.0,
+            "precision@5": 1.0
+        },
+        "bm25_only": {
+            "hit_rate@1": 1.0,
+            "hit_rate@3": 1.0,
+            "hit_rate@5": 1.0,
+            "mrr@1": 1.0,
+            "mrr@3": 1.0,
+            "mrr@5": 1.0,
+            "precision@1": 1.0,
+            "precision@3": 1.0,
+            "precision@5": 1.0
+        },
+        "hybrid_rrf": {
+            "hit_rate@1": 1.0,
+            "hit_rate@3": 1.0,
+            "hit_rate@5": 1.0,
+            "mrr@1": 1.0,
+            "mrr@3": 1.0,
+            "mrr@5": 1.0,
+            "precision@1": 1.0,
+            "precision@3": 1.0,
+            "precision@5": 1.0
+        }
+    },
+    "llm_inference_benchmarks": {
+        "model": "qwen2.5:7b",
+        "mean_ttft_ms": 1765.92,
+        "mean_tps": 27.86,
+        "mean_total_latency_sec": 3.64,
+        "mean_tokens_generated": 52.3
+    },
+    "rag_pipeline_decomposition": {
+        "query_embedding_ms": 0.27,
+        "hybrid_retrieval_ms": 35.11,
+        "context_assembly_ms": 0.07,
+        "llm_generation_ms": 5927.37,
+        "total_pipeline_ms": 5962.81,
+        "percentage_breakdown": {
+            "query_embedding_pct": 0.0,
+            "hybrid_retrieval_pct": 0.6,
+            "context_assembly_pct": 0.0,
+            "llm_generation_pct": 99.4
+        }
+    },
+    "fast_vs_quality_ablation": {
+        "quality_mode": {
+            "latency_sec": 16.52,
+            "retrieval_count": 8,
+            "sources_cited": 3
+        },
+        "fast_mode": {
+            "latency_sec": 11.19,
+            "retrieval_count": 8,
+            "sources_cited": 5
+        },
+        "latency_reduction_pct": 32.3
+    },
+    "storage_footprint": {
+        "process_ram_rss_mb": 250.0,
+        "sqlite_benchmark_db_bytes": 4096,
+        "bytes_per_embedded_vector": 1536
+    },
+    "total_benchmark_duration_sec": 51.65
+}
