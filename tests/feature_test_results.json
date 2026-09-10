@@ -8,84 +8,84 @@
             "category": "Notebooks",
             "feature": "Create Public & Private Notebooks",
             "status": "PASSED",
-            "duration_ms": 4.68,
+            "duration_ms": 4.85,
             "details": "Created IDs 2, 3"
         },
         {
             "category": "Notebooks",
             "feature": "List Notebooks & Vault Visibility",
             "status": "PASSED",
-            "duration_ms": 0.35,
+            "duration_ms": 0.32,
             "details": "Found 3 notebooks"
         },
         {
             "category": "Notebooks",
             "feature": "Password Authentication & Verification",
             "status": "PASSED",
-            "duration_ms": 0.03,
+            "duration_ms": 0.02,
             "details": "Valid=True, Invalid=False"
         },
         {
             "category": "Notebooks",
             "feature": "Security Question Password Recovery",
             "status": "PASSED",
-            "duration_ms": 4.93,
+            "duration_ms": 4.47,
             "details": "Reset status: Password reset successfully"
         },
         {
             "category": "Notebooks",
             "feature": "Rename Notebook",
             "status": "PASSED",
-            "duration_ms": 3.08,
+            "duration_ms": 2.37,
             "details": "Renamed to 'Advanced AI Studies'"
         },
         {
             "category": "Settings",
             "feature": "Workspace Preferences & Performance Modes",
             "status": "PASSED",
-            "duration_ms": 7.92,
+            "duration_ms": 6.71,
             "details": "Fast/Quality, Chunking, Discover validated"
         },
         {
             "category": "Notes",
             "feature": "Notes CRUD, Append & Index Toggle",
             "status": "PASSED",
-            "duration_ms": 11.2,
+            "duration_ms": 8.58,
             "details": "Note #1 verified"
         },
         {
             "category": "Flashcards",
             "feature": "Leitner Spaced Repetition (Boxes 1-5, Reorder, Reset)",
             "status": "PASSED",
-            "duration_ms": 15.21,
+            "duration_ms": 13.82,
             "details": "All Leitner state transitions verified"
         },
         {
             "category": "Editor",
             "feature": "Notebook Document State Persistence",
             "status": "PASSED",
-            "duration_ms": 2.57,
+            "duration_ms": 2.27,
             "details": "Saved and retrieved synthesis HTML"
         },
         {
             "category": "Chat Memory",
             "feature": "Conversation History Tracking & Purge",
             "status": "PASSED",
-            "duration_ms": 5.22,
+            "duration_ms": 4.82,
             "details": "Message logging & clearing verified"
         },
         {
             "category": "Document Processing",
             "feature": "TXT & Markdown Processing",
             "status": "PASSED",
-            "duration_ms": 2.79,
+            "duration_ms": 11.6,
             "details": "TXT chunks: 1, MD chunks: 1"
         },
         {
             "category": "Document Processing",
             "feature": "PDF Parsing with Page Mapping",
             "status": "PASSED",
-            "duration_ms": 17.22,
+            "duration_ms": 40.96,
             "details": "Parsed 2 chunks across 2 pages"
         },
         {
@@ -99,191 +99,191 @@
             "category": "OCR Processing",
             "feature": "EasyOCR Image Text Extraction",
             "status": "PASSED",
-            "duration_ms": 4260.65,
+            "duration_ms": 58380.09,
             "details": "Extracted: 'CARNETLMOCR'"
         },
         {
             "category": "Embeddings",
             "feature": "FastEmbed BGE-Small (384-dim, Normalized)",
             "status": "PASSED",
-            "duration_ms": 179.74,
+            "duration_ms": 366.8,
             "details": "Dim=384, Norm=1.0000"
         },
         {
             "category": "Vector DB",
             "feature": "Milvus Lite Embedded Collection & Index",
             "status": "PASSED",
-            "duration_ms": 677.23,
+            "duration_ms": 1917.07,
             "details": "Path: C:\\Users\\vedan\\Desktop\\college projects\\Final_Year_Project\\tests\\benchmark_data\\test_env\\test_carnetlm.db"
         },
         {
             "category": "Vector DB",
             "feature": "Vector Insertion & Strict Notebook Isolation",
             "status": "PASSED",
-            "duration_ms": 47.25,
+            "duration_ms": 287.34,
             "details": "Notebook 101 & 202 completely isolated"
         },
         {
             "category": "Vector DB",
             "feature": "Cascade Delete By Source",
             "status": "PASSED",
-            "duration_ms": 12.48,
+            "duration_ms": 18.18,
             "details": "Deleted chunks confirmed purged"
         },
         {
             "category": "Hybrid Search",
             "feature": "BM25 Sparse Lexical Search",
             "status": "PASSED",
-            "duration_ms": 12.42,
+            "duration_ms": 82.37,
             "details": "Top match: doc_1 (Score: 1.20)"
         },
         {
             "category": "Hybrid Search",
             "feature": "Reciprocal Rank Fusion (RRF)",
             "status": "PASSED",
-            "duration_ms": 0.01,
+            "duration_ms": 0.02,
             "details": "Top fused chunk: doc_1 (RRF score: 0.03252)"
         },
         {
             "category": "LLM Router",
             "feature": "Ollama Connection & Model Discovery",
             "status": "PASSED",
-            "duration_ms": 1213.08,
+            "duration_ms": 1413.82,
             "details": "Active provider: ollama, models: 1"
         },
         {
             "category": "LLM Router",
             "feature": "Inference Generation & Token Accounting",
             "status": "PASSED",
-            "duration_ms": 1357.66,
+            "duration_ms": 12790.04,
             "details": "Response: 'The speed of light in vacuum is approximately 299,792 kilometers per second.' (Tokens: {'prompt_tokens': 41, 'completion_tokens': 21})"
         },
         {
             "category": "LLM Router",
             "feature": "Token Streaming (SSE Engine)",
             "status": "PASSED",
-            "duration_ms": 413.37,
+            "duration_ms": 502.99,
             "details": "Streamed 5 chunks: '1 2 3'"
         },
         {
             "category": "RAG Engine",
             "feature": "Grounded Response & Page Citations",
             "status": "PASSED",
-            "duration_ms": 4691.73,
+            "duration_ms": 4797.89,
             "details": "Retrieved 1 chunks; Citation: Page 4"
         },
         {
             "category": "RAG Engine",
             "feature": "Out-of-Scope Fallback & Hallucination Guard",
             "status": "PASSED",
-            "duration_ms": 1346.08,
+            "duration_ms": 1326.32,
             "details": "Correctly disclaimed out-of-scope query"
         },
         {
             "category": "AI Assist",
             "feature": "Editor Assist Actions (Grammar, Simplify, Define, Expand)",
             "status": "PASSED",
-            "duration_ms": 5641.18,
+            "duration_ms": 6211.35,
             "details": "All 4 assist prompts executed"
         },
         {
             "category": "Export System",
             "feature": "Document Exporters (Markdown, TXT, DOCX)",
             "status": "PASSED",
-            "duration_ms": 169.91,
+            "duration_ms": 788.44,
             "details": "DOCX created (36643 bytes)"
         },
         {
             "category": "Web Discovery",
             "feature": "DuckDuckGo Realtime Search",
             "status": "SKIPPED",
-            "duration_ms": 465.78,
+            "duration_ms": 1558.73,
             "details": "Network notice: "
         },
         {
             "category": "YouTube Ingestion",
             "feature": "Transcript Extractor & Video ID Parser",
             "status": "PASSED",
-            "duration_ms": 1.55,
+            "duration_ms": 20.99,
             "details": "Parsed Video ID: dQw4w9WgXcQ"
         },
         {
             "category": "Text-to-Speech",
             "feature": "Orpheus TTS Client & Fallback",
             "status": "PASSED",
-            "duration_ms": 4276.3,
+            "duration_ms": 4433.8,
             "details": "TTS status: offline"
         },
         {
             "category": "REST API",
             "feature": "GET /api/health",
             "status": "PASSED",
-            "duration_ms": 5.59,
+            "duration_ms": 6.86,
             "details": "Status: ok"
         },
         {
             "category": "REST API",
             "feature": "GET /api/models",
             "status": "PASSED",
-            "duration_ms": 5.68,
+            "duration_ms": 8.11,
             "details": "Available models: 1"
         },
         {
             "category": "REST API",
             "feature": "GET /api/chunking/profiles",
             "status": "PASSED",
-            "duration_ms": 1.35,
+            "duration_ms": 2.32,
             "details": "Presets: ['compact', 'balanced', 'dense']"
         },
         {
             "category": "REST API",
             "feature": "Notebooks CRUD Endpoints (/api/notebooks)",
             "status": "PASSED",
-            "duration_ms": 19.17,
+            "duration_ms": 24.27,
             "details": "Create, Rename, Delete verified"
         },
         {
             "category": "REST API",
             "feature": "POST /api/clipboard",
             "status": "PASSED",
-            "duration_ms": 8.59,
+            "duration_ms": 6.72,
             "details": "Status: processing"
         },
         {
             "category": "REST API",
             "feature": "POST /api/search",
             "status": "PASSED",
-            "duration_ms": 1.71,
+            "duration_ms": 2.59,
             "details": "Returned 0 chunks"
         },
         {
             "category": "REST API",
             "feature": "Notes Endpoints (/api/notes)",
             "status": "PASSED",
-            "duration_ms": 11.57,
-            "details": "Note #8 created, fetched, deleted"
+            "duration_ms": 10.44,
+            "details": "Note #9 created, fetched, deleted"
         },
         {
             "category": "REST API",
             "feature": "Settings Endpoints (/api/settings/performance)",
             "status": "PASSED",
-            "duration_ms": 10.76,
+            "duration_ms": 9.84,
             "details": "Fast <-> Quality toggled successfully"
         },
         {
             "category": "REST API",
             "feature": "POST /api/ai/assist",
             "status": "PASSED",
-            "duration_ms": 839.44,
+            "duration_ms": 1007.97,
             "details": "Grammar output: 'Vector databases enable fast similarity search....'"
         },
         {
             "category": "REST API",
             "feature": "POST /api/export (TXT/MD/DOCX)",
             "status": "PASSED",
-            "duration_ms": 61.87,
+            "duration_ms": 108.89,
             "details": "Exported 36 bytes"
         }
     ],
-    "duration_total_sec": 30.45
+    "duration_total_sec": 116.01
 }
