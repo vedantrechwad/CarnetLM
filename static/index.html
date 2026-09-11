@@ -7,10 +7,10 @@
     <meta name="description" content="Offline-first local AI notebook. Multi-notebook Q&A with notes, rich editing, and AI writing assist.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600;1,700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/theme.css?v=6.0">
+    <link rel="stylesheet" href="/static/theme.css?v=7.1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
@@ -2259,9 +2259,38 @@ function formatResponse(text, sources) {
     });
 
     // ── Step 4: Markdown formatting ────────────────────────────────────
+    // Code blocks
+    html = html.replace(/```(?:[a-zA-Z0-9_-]+)?\n?([\s\S]*?)```/g, '<pre class="code-block"><code>$1</code></pre>');
+    html = html.replace(/``(?:[a-zA-Z0-9_-]+)?\n?([\s\S]*?)``/g, '<pre class="code-block"><code>$1</code></pre>');
+
+    // Headers (#, ##, ###)
+    html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+
+    // Bold and inline code
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-    html = html.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+
+    // Bullet and numbered lists
+    html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^\s*(\d+)\.\s+(.+)$/gm, '<li value="$1">$2</li>');
+
+    // Paragraph wrapping
+    html = html.split('\n\n').map(p => {
+        const trimmed = p.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('<h1') || trimmed.startsWith('<h2') || trimmed.startsWith('<h3') || trimmed.startsWith('<pre')) {
+            return trimmed;
+        }
+        if (trimmed.includes('<li>')) {
+            if (trimmed.includes('value=')) {
+                return `<ol>${trimmed.replace(/\n/g, '')}</ol>`;
+            }
+            return `<ul>${trimmed.replace(/\n/g, '')}</ul>`;
+        }
+        return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
+    }).join('');
 
     // ── Step 5: Re-inject math blocks (unescaped) ──────────────────────
     for (let i = 0; i < mathPlaceholders.length; i++) {

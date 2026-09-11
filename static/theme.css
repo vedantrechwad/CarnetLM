@@ -5,6 +5,26 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ─── Global Universal Typography (Be Vietnam Pro Everywhere) ─── */
+html, body, button, input, select, textarea,
+h1, h2, h3, h4, h5, h6,
+p, span, a, label, li, td, th, blockquote,
+.btn, .input, .modal, .card, .msg-bubble,
+.note-card, .guide-content-scroller,
+.ql-editor, .ql-container, .flashcard-text, .flashcard-text-back,
+#quillEditor, .quill-toolbar, .sidebar-group-title, .tool-list-btn,
+.tab, .header-title, .vault-badge, .source-item-name {
+    font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+code, pre, pre code, kbd, samp, .font-mono, .guide-source-num, .citation-link, .note-card-meta {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined' !important;
+}
+
 /* ─── Design Tokens (Dark — Default: Slate Indigo & Heather Navy) ─── */
 :root {
     /* Core palette — Muted Heather Indigo (#373a54 swatch base) */
@@ -112,11 +132,12 @@
     --radius-xl: 16px;
     --radius-full: 9999px;
 
-    /* Typography */
-    --font-headline: 'Manrope', -apple-system, sans-serif;
-    --font-body:     'Be Vietnam Pro', -apple-system, sans-serif;
+    /* Typography — Standardized on Be Vietnam Pro across entire application */
+    --font-headline: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-header:   'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-body:     'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono:     'JetBrains Mono', 'Fira Code', monospace;
-    --font-ui:       var(--font-body);
+    --font-ui:       'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
     /* Legacy compat aliases */
     --g05: var(--surface-container-lowest);
@@ -1780,11 +1801,11 @@ a { color: inherit; text-decoration: none; }
     flex: 1;
     overflow-y: auto;
     padding: 2rem 2.5rem;
-    color: var(--on-surface);
+    color: #f1f2f8 !important;
 }
 .guide-content-scroller h1, .guide-content-scroller h2, .guide-content-scroller h3 {
-    font-family: var(--font-headline);
-    color: var(--on-surface);
+    font-family: var(--font-headline) !important;
+    color: #ffffff !important;
     margin-top: 1.5rem;
     margin-bottom: 0.75rem;
     font-weight: 700;
@@ -1795,14 +1816,31 @@ a { color: inherit; text-decoration: none; }
 .guide-content-scroller p {
     margin-bottom: 1rem;
     line-height: 1.6;
-    color: var(--on-surface-variant, #27211d);
+    color: #f1f2f8 !important;
 }
 .guide-content-scroller ul, .guide-content-scroller ol {
     margin-left: 1.5rem;
     margin-bottom: 1rem;
+    color: #f1f2f8 !important;
 }
 .guide-content-scroller li {
     margin-bottom: 0.35rem;
+    color: #f1f2f8 !important;
+}
+.guide-content-scroller strong, .guide-content-scroller b {
+    color: #ffffff !important;
+}
+.guide-content-scroller .code-block, pre.code-block {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-family: var(--font-mono) !important;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #e2e4f3 !important;
+    margin-bottom: 1rem;
 }
 .citation-link {
     font-family: var(--font-mono);
@@ -2142,4 +2180,105 @@ div.vis-tooltip {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateX(10px); }
     to { opacity: 1; transform: translateX(0); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Dark Mode Total Text Contrast & Black-to-White Enforcement
+   Ensures NO black/dark text is ever invisible on dark surfaces
+   ══════════════════════════════════════════════════════════════ */
+html:not([data-theme="light"]),
+html[data-theme="dark"],
+:root {
+    --text-primary: #f1f2f8;
+    --on-surface: #f1f2f8;
+}
+
+html:not([data-theme="light"]) body,
+html[data-theme="dark"] body {
+    color: #f1f2f8;
+}
+
+/* Force light text on all markdown, study guides, notes, and editor blocks */
+html:not([data-theme="light"]) .guide-content-scroller,
+html[data-theme="dark"] .guide-content-scroller,
+html:not([data-theme="light"]) .guide-content-scroller *,
+html[data-theme="dark"] .guide-content-scroller * {
+    color: #f1f2f8;
+}
+html:not([data-theme="light"]) .guide-content-scroller h1,
+html[data-theme="dark"] .guide-content-scroller h1,
+html:not([data-theme="light"]) .guide-content-scroller h2,
+html[data-theme="dark"] .guide-content-scroller h2,
+html:not([data-theme="light"]) .guide-content-scroller h3,
+html[data-theme="dark"] .guide-content-scroller h3,
+html:not([data-theme="light"]) .guide-content-scroller strong,
+html[data-theme="dark"] .guide-content-scroller strong,
+html:not([data-theme="light"]) .guide-content-scroller b,
+html[data-theme="dark"] .guide-content-scroller b {
+    color: #ffffff !important;
+}
+html:not([data-theme="light"]) .guide-content-scroller .citation-ref,
+html[data-theme="dark"] .guide-content-scroller .citation-ref {
+    color: var(--primary) !important;
+}
+
+/* Chat bubble text in dark mode */
+html:not([data-theme="light"]) .msg-bubble,
+html[data-theme="dark"] .msg-bubble,
+html:not([data-theme="light"]) .msg-bubble p,
+html[data-theme="dark"] .msg-bubble p,
+html:not([data-theme="light"]) .msg-bubble li,
+html[data-theme="dark"] .msg-bubble li,
+html:not([data-theme="light"]) .msg-bubble span:not(.material-symbols-outlined):not(.citation-ref),
+html[data-theme="dark"] .msg-bubble span:not(.material-symbols-outlined):not(.citation-ref) {
+    color: #f1f2f8 !important;
+}
+html:not([data-theme="light"]) .msg-bubble strong,
+html[data-theme="dark"] .msg-bubble strong,
+html:not([data-theme="light"]) .msg-bubble h1,
+html[data-theme="dark"] .msg-bubble h1,
+html:not([data-theme="light"]) .msg-bubble h2,
+html[data-theme="dark"] .msg-bubble h2,
+html:not([data-theme="light"]) .msg-bubble h3,
+html[data-theme="dark"] .msg-bubble h3 {
+    color: #ffffff !important;
+}
+
+/* Quill Editor content in dark mode */
+html:not([data-theme="light"]) .ql-editor,
+html[data-theme="dark"] .ql-editor,
+html:not([data-theme="light"]) .ql-editor *,
+html[data-theme="dark"] .ql-editor * {
+    color: #f1f2f8 !important;
+}
+
+/* Flashcards content in dark mode */
+html:not([data-theme="light"]) .flashcard-text,
+html[data-theme="dark"] .flashcard-text,
+html:not([data-theme="light"]) .flashcard-text-back,
+html[data-theme="dark"] .flashcard-text-back {
+    color: #f1f2f8 !important;
+}
+
+/* Modals, Tables, Inputs */
+html:not([data-theme="light"]) .modal-body,
+html[data-theme="dark"] .modal-body,
+html:not([data-theme="light"]) .modal-content,
+html[data-theme="dark"] .modal-content,
+html:not([data-theme="light"]) table,
+html[data-theme="dark"] table,
+html:not([data-theme="light"]) td,
+html[data-theme="dark"] td,
+html:not([data-theme="light"]) th,
+html[data-theme="dark"] th {
+    color: #f1f2f8 !important;
+}
+
+html:not([data-theme="light"]) input,
+html[data-theme="dark"] input,
+html:not([data-theme="light"]) textarea,
+html[data-theme="dark"] textarea,
+html:not([data-theme="light"]) select,
+html[data-theme="dark"] select {
+    color: #f1f2f8 !important;
 }

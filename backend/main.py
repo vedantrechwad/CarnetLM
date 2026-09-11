@@ -1085,6 +1085,63 @@ async def clear_history(notebook_id: int = Query(1)):
 
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
 
+def _clean_study_guide_content(raw_text: str) -> str:
+    """Format and clean study guide content, converting raw JSON artifacts into structured Markdown."""
+    if not raw_text or not isinstance(raw_text, str):
+        return raw_text or ""
+
+    text = raw_text.strip()
+    
+    # Check for embedded JSON objects (fenced with backticks or raw curly braces)
+    json_match = re.search(
+        r"```(?:json)?\s*(\{[\s\S]*?\})\s*```|`{1,2}(?:json)?\s*(\{[\s\S]*?\})\s*`{1,2}|(^\s*\{[\s\S]*?\n\s*\})",
+        text,
+        re.MULTILINE,
+    )
+    
+    if json_match:
+        raw_json = json_match.group(1) or json_match.group(2) or json_match.group(3)
+        try:
+            data = json.loads(raw_json)
+            if isinstance(data, dict):
+                md_parts = []
+                if data.get("title"):
+                    md_parts.append(f"# {data['title']}\n")
+                if data.get("summary"):
+                    md_parts.append(f"## Executive Summary\n{data['summary']}\n")
+                if data.get("rating"):
+                    exp = f" — {data['rating explanation']}" if data.get("rating explanation") else ""
+                    md_parts.append(f"**Material Depth Rating**: {data['rating']}/10{exp}\n")
+                if data.get("findings") and isinstance(data["findings"], list):
+                    md_parts.append("## Key Findings\n")
+                    for f in data["findings"]:
+                        if isinstance(f, dict):
+                            s = f.get("summary", "")
+                            e = f.get("explanation", "")
+                            if s and e:
+                                md_parts.append(f"- **{s}**: {e}")
+                            elif s or e:
+                                md_parts.append(f"- {s or e}")
+                        else:
+                            md_parts.append(f"- {f}")
+                    md_parts.append("")
+                
+                # Append the remainder of the markdown text (e.g. ### Key Concepts, ### Important Details)
+                end_pos = json_match.end()
+                rest = text[end_pos:].strip()
+                if rest:
+                    md_parts.append(rest)
+                
+                return "\n".join(md_parts).strip()
+        except Exception as e:
+            logger.debug(f"Could not parse embedded JSON in study guide: {e}")
+
+    # Strip any stray backtick fences if still present
+    text = re.sub(r"^`{2,3}(?:json)?\s*", "", text)
+    text = re.sub(r"\s*`{2,3}$", "", text)
+    return text.strip()
+
+
 @app.get("/api/summary")
 async def get_summary(notebook_id: int = Query(...)):
     """Fetch saved study guide/summary for a notebook."""
@@ -1092,7 +1149,13 @@ async def get_summary(notebook_id: int = Query(...)):
         raise HTTPException(status_code=503, detail="Not initialized")
     guide = _memory.get_study_guide(notebook_id)
     if guide:
-        return json.loads(guide)
+        try:
+            data = json.loads(guide)
+            if isinstance(data, dict) and "summary" in data:
+                data["summary"] = _clean_study_guide_content(data["summary"])
+            return data
+        except Exception:
+            return {"summary": _clean_study_guide_content(guide), "sources_used": []}
     return {"summary": "", "sources_used": []}
 
 
@@ -1142,25 +1205,33 @@ async def generate_summary(request: SummaryRequest):
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Based on the following source material, create a comprehensive study guide.
+            prompt=f"""Based on the following source material, create a comprehensive, highly readable study guide.
 Cite the sources you use using their numbers, e.g. [1], [2], etc.
 
-Rules:
-1. Every major fact, concept, or summary MUST be grounded in the context and cite the corresponding source numbers, e.g. [1].
-2. Structure the guide with the following sections:
-   - **Executive Summary**: A high-level overview of the notebook materials.
-   - **Key Concepts**: Core terms, definitions, and theories, citing source numbers.
-   - **Important Details**: Facts, figures, or notable connections.
+IMPORTANT FORMATTING RULES:
+1. Output directly in human-readable Markdown format.
+2. DO NOT output raw JSON objects, JSON dictionaries, or code fences (never use ```json or curly braces for the document structure).
+3. Structure the guide with these exact markdown sections:
+   ## Executive Summary
+   A comprehensive high-level overview of the topics and key takeaways.
+
+   ## Key Concepts
+   Core terms, theories, and definitions with citations [1], [2].
+
+   ## Important Details & Findings
+   Key findings, comparative points, and practical applications.
 
 Source Material:
 {context}""",
-            system_prompt="You are an expert study guide creator. Create structured summaries with clear source citations [1], [2], etc.",
+            system_prompt="You are an expert study guide creator. Produce well-structured, beautiful Markdown documents with clear citations [1], [2]. Never output raw JSON code blocks.",
             temperature=0.3,
             max_tokens=2000,
         )
         
+        cleaned_content = _clean_study_guide_content(result.content)
+
         guide_data = {
-            "summary": result.content,
+            "summary": cleaned_content,
             "sources_used": sources_used,
             "provider": result.provider,
             "model": result.model,
