@@ -11,16 +11,16 @@ CarnetLM lets you group PDFs, articles, web pages, and video transcripts into se
 - **Local Privacy**: Uploaded PDFs, vector databases, SQLite metadata, and text memories are stored in the git-ignored `data/` directory. No telemetry or cloud storage. A fresh clone starts with an empty environment.
 - **Multi-Notebook Vaults**: Keep projects, courses, or research themes in separate workspaces. Notebooks can be password-protected (verified client-side) to lock sensitive files.
 - **Multi-Format Source Ingestion**:
-  - Documents — local PDF, TXT, and Markdown files.
-  - OCR — text extraction from uploaded images.
-  - Web scraping — article extraction from a URL.
-  - YouTube transcripts — pulled directly from video links.
-  - Clipboard — paste text in as a source.
+  - Documents: local PDF, TXT, and Markdown files.
+  - OCR: text extraction from uploaded images.
+  - Web scraping: article extraction from a URL.
+  - YouTube transcripts: pulled directly from video links.
+  - Clipboard: paste text in as a source.
 - **Grounded RAG Q&A with Citations**: Ask questions in plain language and get streaming answers grounded in your sources, with citations pointing back to specific paragraphs and pages.
 - **Flashcard Study Decks**:
   - Auto-generate flashcards from a notebook using AI.
   - Drag-and-drop card ordering in a Keep-style grid.
-  - Leitner spaced repetition — grade reviews to move cards through boxes 1 to 5.
+  - Leitner spaced repetition: grade reviews to move cards through boxes 1 to 5.
   - Sidebar showing study progress, with an option to reset counts.
 - **Integrated Editor with AI Assist**: Write synthesis documents in an editor workspace, with AI help to fix grammar, simplify sentences, expand paragraphs, write definitions, or rewrite text.
 - **Local Text-to-Speech**: Reads syntheses and chat answers aloud using a local Orpheus TTS integration (health-checked).
@@ -40,7 +40,7 @@ CarnetLM lets you group PDFs, articles, web pages, and video transcripts into se
 ### Backend (FastAPI API Server)
 
 - **Web Server**: FastAPI, served by Uvicorn.
-- **Vector Search**: Milvus Lite, an embedded file-based database (`data/carnetlm.db`) — no separate server needed.
+- **Vector Search**: Milvus Lite, an embedded file-based database (`data/carnetlm.db`) that needs no separate server.
 - **Embeddings**: Local FastEmbed library running the `BAAI/bge-small-en-v1.5` model.
 - **Hybrid Search**: BM25 keyword matching via `bm25s`.
 - **Data Storage**: SQLite (`data/memory.db`) for notebook settings, study decks, notes, and password credentials.
