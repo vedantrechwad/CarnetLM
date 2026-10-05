@@ -4,14 +4,13 @@ Tests each subsystem and feature individually, ensuring 100% functionality.
 All test artifacts are isolated in ./tests/benchmark_data/test_env/.
 """
 
-import os
 import sys
 import time
 import json
 import shutil
 import hashlib
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any
 from dataclasses import dataclass
 
 # Ensure project root in python path
@@ -115,6 +114,7 @@ def test_memory_layer():
     t0 = time.time()
     try:
         sec_info = memory.get_notebook_security_info(nb2_id)
+        assert sec_info is not None, "Security info not found"
         assert sec_info["security_question"] == "What is your favorite color?"
         new_pw_hash = hashlib.sha256(b"newpassword456").hexdigest()
         reset_ok, msg = memory.reset_notebook_password(nb2_id, new_password_hash=new_pw_hash, security_answer_hash=ans_hash)
@@ -161,21 +161,25 @@ def test_memory_layer():
         note_id = memory.create_note(nb1_id, "Literature Review", "Initial observations on RAG architecture.")
         assert note_id is not None
         note = memory.get_note(note_id)
+        assert note is not None, "Note was not retrieved"
         assert note["title"] == "Literature Review"
         
         # Update note
         memory.update_note(note_id, title="Literature Review V2", content="Expanded findings.")
         note_up = memory.get_note(note_id)
+        assert note_up is not None, "Updated note was not retrieved"
         assert note_up["title"] == "Literature Review V2"
         
         # Append note
         memory.append_to_note(note_id, "Additional citation added.")
         note_app = memory.get_note(note_id)
+        assert note_app is not None, "Appended note was not retrieved"
         assert "Additional citation added." in note_app["content"]
         
         # Note indexing toggle
         memory.set_note_indexed(note_id, True)
         note_indexed = memory.get_note(note_id)
+        assert note_indexed is not None, "Indexed note was not retrieved"
         assert note_indexed["indexed_in_rag"] is True
         
         record_result("Notes", "Notes CRUD, Append & Index Toggle", "PASSED", time.time() - t0, f"Note #{note_id} verified")
@@ -215,6 +219,7 @@ def test_memory_layer():
     try:
         memory.save_document(nb1_id, "<h1>Comprehensive Survey</h1><p>Doc content</p>", "Comprehensive Survey")
         doc = memory.get_document(nb1_id)
+        assert doc is not None, "Document not found"
         assert doc["title"] == "Comprehensive Survey"
         assert "Doc content" in doc["html_content"]
         record_result("Editor", "Notebook Document State Persistence", "PASSED", time.time() - t0, "Saved and retrieved synthesis HTML")
@@ -373,6 +378,7 @@ def test_vector_and_embeddings():
 
     # 3.3 Multi-Notebook Isolated Chunk Insertion & Search
     t0 = time.time()
+    q_vec: list[float] = []
     try:
         chunks_nb1 = [
             DocumentChunk(
@@ -420,7 +426,7 @@ def test_vector_and_embeddings():
         vdb.insert_embeddings(emb_nb2, notebook_id=202)
         
         # Test Search with Notebook Isolation
-        q_vec = embedder.generate_query_embedding("qubits superposition").tolist()
+        q_vec: list[float] = embedder.generate_query_embedding("qubits superposition").tolist()
         
         # Search in notebook 101: should return quantum chunks
         res_nb1 = vdb.search(q_vec, limit=5, notebook_id=101)
@@ -439,6 +445,8 @@ def test_vector_and_embeddings():
     # 3.4 Delete By Source
     t0 = time.time()
     try:
+        if not q_vec:
+            q_vec = embedder.generate_query_embedding("qubits superposition").tolist()
         vdb.delete_by_source("quantum.pdf", notebook_id=101)
         res_after = vdb.search(q_vec, limit=5, notebook_id=101)
         assert len(res_after) == 0, f"Expected 0 chunks after delete, got {len(res_after)}"
@@ -456,6 +464,7 @@ def test_hybrid_search(embedder):
     from src.generation.hybrid_search import BM25Index, reciprocal_rank_fusion
     
     t0 = time.time()
+    bm25: Any = None
     try:
         bm25 = BM25Index()
         docs = [
@@ -470,6 +479,7 @@ def test_hybrid_search(embedder):
         assert len(hits) >= 1
         top_doc_idx, top_score = hits[0]
         top_doc = bm25.get_document(top_doc_idx)
+        assert top_doc is not None, "Document not found in BM25"
         assert top_doc["id"] == "doc_1"
         record_result("Hybrid Search", "BM25 Sparse Lexical Search", "PASSED", time.time() - t0, f"Top match: {top_doc['id']} (Score: {top_score:.2f})")
     except Exception as e:
@@ -478,6 +488,13 @@ def test_hybrid_search(embedder):
     # 4.2 Reciprocal Rank Fusion (RRF)
     t0 = time.time()
     try:
+        if bm25 is None:
+            bm25 = BM25Index()
+            bm25.build_index([
+                {"id": "doc_1", "content": "Transformer models utilize self-attention mechanisms for sequence modeling."},
+                {"id": "doc_2", "content": "Convolutional networks are primarily suited for grid-like image representations."},
+                {"id": "doc_3", "content": "Recurrent neural networks process sequential data with hidden state recurrence."}
+            ])
         # Vector hits: doc_2 at rank 0, doc_1 at rank 1
         dense_results = [
             {"id": "doc_2", "content": "Convolutional networks", "score": 0.88},
@@ -504,7 +521,13 @@ def test_llm_router():
     t0 = time.time()
     try:
         llm = LLMRouter(ollama_model="qwen2.5:7b", auto_start=True)
+        # Allow up to 10s for background Ollama process to finish port binding
         health = llm.health_check()
+        for _ in range(20):
+            if health.get("ollama", {}).get("available"):
+                break
+            time.sleep(0.5)
+            health = llm.health_check()
         assert health["ollama"]["available"] is True, "Ollama is not running on localhost:11434"
         models = llm.list_models()
         assert len(models) > 0, "No models found in Ollama"
@@ -754,9 +777,10 @@ def test_fastapi_endpoints(memory, nb1_id):
 
         # 9.5 Clipboard Ingestion Endpoint
         t0 = time.time()
+        nb_target: int = 1
         try:
             res_nb = client.post("/api/notebooks", json={"name": "API Ingest Notebook", "is_private": 0})
-            nb_target = res_nb.json()["id"]
+            nb_target = res_nb.json().get("id", 1)
             res_clip = client.post("/api/clipboard", json={
                 "text": "CarnetLM Clipboard Reference: Local execution protects intellectual property.",
                 "title": "IP Protection Note",

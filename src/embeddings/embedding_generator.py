@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Any
 
 import numpy as np
 from dataclasses import dataclass
@@ -45,8 +45,8 @@ class EmbeddingGenerator:
     def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5", batch_size: Optional[int] = None):
         self.model_name = model_name
         self.batch_size = batch_size or DEFAULT_BATCH_SIZE
-        self.model = None
-        self.embedding_dim = None
+        self.model: Any = None
+        self.embedding_dim: int = 384
         self._cache = EmbedCache()
         self._initialize_model()
 
@@ -111,7 +111,8 @@ class EmbeddingGenerator:
 
                 miss_map = {idx: fresh_vectors[k] for k, idx in enumerate(to_embed_indices)}
                 for j, chunk in enumerate(sub_batch):
-                    embedding = cached[j] if cached[j] is not None else miss_map[j]
+                    cached_vec = cached[j]
+                    embedding = cached_vec if cached_vec is not None else miss_map[j]
                     embedded_chunks.append(
                         EmbeddedChunk(
                             chunk=chunk,

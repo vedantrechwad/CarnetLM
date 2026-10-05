@@ -152,6 +152,8 @@ Vectorizing textual chunks into 384-dimensional dense space represents the first
 | **32** | 0.87 ms | 0.027 ms | 36,871.46 | $3.95\times$ |
 | **64** | **1.29 ms** | **0.020 ms** | **49,640.11** | **$5.32\times$** |
 
+*Fig. 6: Dense embedding throughput (FastEmbed ONNX, `bge-small-en-v1.5`) across increasing batch sizes ($B = 1$ to $64$). Demonstrates a $5.32\times$ throughput scaling peaking at $49,640\text{ chunks/sec}$ as per-chunk latency drops from $0.11\text{ ms}$ to $0.020\text{ ms}$ via CPU SIMD vectorization and cache locality.*
+
 *Analysis*: Batched ONNX execution exhibits significant SIMD vectorization and cache locality benefits. Moving from unbatched processing ($B=1$) to $B=64$ decreases per-chunk embedding latency from $0.11\text{ ms}$ to $0.020\text{ ms}$, achieving a **$5.32\times$ throughput speedup** ($49,640\text{ chunks/sec}$). For an average document containing 250 chunks, complete dense vectorization is achieved in approximately **5.1 milliseconds**.
 
 ---
@@ -251,6 +253,8 @@ END-TO-END RAG LATENCY CONTRIBUTION
 |                 LLM Autoregressive Token Generation (99.40%)                     |
 +----------------------------------------------------------------------------------+
 ```
+
+*Fig. 5: Empirical component latency decomposition of the end-to-end RAG query pipeline. Autoregressive LLM decoding accounts for $99.40\%$ ($5,927.37\text{ ms}$) of turnaround latency, while local hybrid retrieval accounts for only $0.59\%$ ($35.11\text{ ms}$) and prompt assembly / query embedding consumes $< 0.01\%$ ($0.34\text{ ms}$).*
 
 #### Key Academic Finding:
 > **The Retrieval Subsystem Is Not the Latency Bottleneck**: Local hybrid retrieval requires only **35.11 ms (0.59%)** of the end-to-end execution window. Over **99.4% of total user-perceived turnaround time is consumed by autoregressive LLM decoding**. This empirical insight proves that adding rich local retrieval steps—including multi-stage RRF re-ranking and OCR extraction—imposes virtually zero noticeable overhead on the user experience.

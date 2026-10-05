@@ -57,7 +57,7 @@ CarnetLM/
 │   ├── helpers.py      # Prompt templates, export formats, synthesis functions
 │   └── main.py         # Main webapp route definitions & processing logic
 ├── src/                # Modular Python sub-packages
-│   ├── discovery/      # Web search tools (DuckDuckGo integration)
+│   ├── discovery/      # Web search tools (DDGS integration)
 │   ├── document_processing/ # PDF text extraction and OCR image support
 │   ├── embeddings/     # Local FastEmbed transformer wrapper
 │   ├── generation/     # RAG prompt generation, routing and retrieval
@@ -70,9 +70,15 @@ CarnetLM/
 │   ├── index.html      # Main app viewport, modals, study desks and tabs
 │   ├── theme.css       # Curator dark palette theme, styles, transitions, grid systems
 │   └── icons.js        # Lucide vector icon components
+├── docs/               # Research paper & architectural documentation
+│   ├── PROPOSED_FRAMEWORK.md
+│   ├── IMPLEMENTATION_AND_RESULTS.md
+│   └── PERFORMANCE_ANALYSIS.md
+├── tests/              # Comprehensive automated feature test suite
+│   └── test_all_features.py
 ├── run.bat             # Automated Windows setup and startup file
 ├── pyproject.toml      # Project packaging metadata and dependencies
-└── requirements.txt    # Standard package-requirements manifest
+└── uv.lock             # Deterministic dependency lockfile
 ```
 
 ---

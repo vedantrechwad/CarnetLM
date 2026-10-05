@@ -29,16 +29,16 @@ logger = logging.getLogger(__name__)
 
 # ─── Global State ──────────────────────────────────────────────────────────────
 
-_llm_router = None
-_doc_processor = None
-_embedding_generator = None
-_vector_db = None
-_rag_generator = None
-_web_scraper = None
-_youtube_extractor = None
-_memory = None
-_ingest_jobs = None
-_orpheus_tts = None
+_llm_router: Any = None
+_doc_processor: Any = None
+_embedding_generator: Any = None
+_vector_db: Any = None
+_rag_generator: Any = None
+_web_scraper: Any = None
+_youtube_extractor: Any = None
+_memory: Any = None
+_ingest_jobs: Any = None
+_orpheus_tts: Any = None
 
 
 def _initialize():
@@ -525,7 +525,7 @@ async def create_notebook(request: NotebookCreate):
         raise HTTPException(status_code=503, detail="Not initialized")
     nb_id = _memory.create_notebook(
         name=request.name,
-        is_private=request.is_private,
+        is_private=int(request.is_private or 0),
         password_hash=request.password_hash,
         security_question=request.security_question,
         security_answer_hash=request.security_answer_hash,
@@ -1025,8 +1025,8 @@ async def chat_stream(request: ChatRequest):
 
     def event_generator():
         full_text = []
-        sources_used = []
-        retrieval_count = 0
+        sources_used: Any = []
+        retrieval_count: Any = 0
         try:
             for event_type, data in _rag_generator.generate_response_stream(
                 query=request.query,
@@ -1592,9 +1592,9 @@ async def refresh_source(request: RefreshSourceRequest):
 
     try:
         _apply_notebook_chunking(nb_id)
+        url = metadata.get("url") or metadata.get("name", "")
         if source_type == "Website":
             # Re-scrape
-            url = metadata.get("url") or metadata.get("name", "")
             if not url.startswith("http"):
                 raise HTTPException(status_code=400, detail="Cannot determine URL for this source")
             chunks = _web_scraper.scrape_url(url)
@@ -1804,7 +1804,7 @@ async def export_document(request: ExportRequest):
 
     elif request.format == "md":
         try:
-            from markdownify import markdownify
+            from markdownify import markdownify  # type: ignore
             md = markdownify(request.html, heading_style="ATX", strip=["img"])
             return Response(
                 content=md.encode("utf-8"),
@@ -1823,7 +1823,7 @@ async def export_document(request: ExportRequest):
     elif request.format == "docx":
         try:
             from docx import Document
-            from htmldocx import HtmlToDocx
+            from htmldocx import HtmlToDocx  # type: ignore
 
             doc = Document()
             parser = HtmlToDocx()
@@ -2282,6 +2282,18 @@ async def serve_frontend():
     if index_path.exists():
         return FileResponse(str(index_path))
     return {"message": "CarnetLM API is running. Frontend not found at /static/index.html"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    svg_icon = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+        '<rect width="32" height="32" rx="8" fill="#6366f1"/>'
+        '<path d="M8 8h16v16H8z" fill="none" stroke="#fff" stroke-width="2"/>'
+        '<path d="M12 12h8M12 16h8M12 20h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'
+        '</svg>'
+    )
+    return Response(content=svg_icon, media_type="image/svg+xml")
 
 
 if __name__ == "__main__":

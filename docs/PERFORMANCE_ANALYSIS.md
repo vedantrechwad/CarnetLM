@@ -216,6 +216,8 @@ We evaluated FastEmbed (`BAAI/bge-small-en-v1.5`) running under ONNX Runtime wit
 | **32** | 0.87 ms | 0.027 ms | 36,871.46 | $3.95\times$ |
 | **64** | 1.29 ms | 0.020 ms | 49,640.11 | $5.32\times$ |
 
+*Fig. 6: Embedding throughput vs. batch size ($B=1$ to $64$). Demonstrates $5.32\times$ throughput speedup peaking at $49,640\text{ chunks/sec}$ on CPU SIMD execution.*
+
 *Observation*: Scaling the embedding batch size from 1 to 64 yields a **$5.32\times$ throughput improvement**, peaking at **49,640 chunks per second** with a per-chunk latency of just **0.02 ms**. This confirms the efficiency of ONNX runtime vectorization on modern CPU SIMD instruction sets.
 
 ---
@@ -293,6 +295,8 @@ To pinpoint latency bottlenecks, an end-to-end RAG query (*"How does Shor's algo
 | Embedding: 0.27 ms (<0.01%)                                             |
 | Context Assembly: 0.07 ms (<0.01%)                                      |
 ```
+
+*Fig. 5: Latency decomposition showing LLM generation 99.40% vs. hybrid retrieval 0.59% vs. prompt assembly / embedding <0.01%.*
 
 *Critical Research Finding*: **99.4% of total RAG latency resides in autoregressive LLM token generation**, while retrieval and embedding operations consume less than 0.6% (35.45 ms). Optimizations targeting retrieval speed yield marginal perceptible gains compared to speculative decoding, prompt caching, or streaming generation.
 

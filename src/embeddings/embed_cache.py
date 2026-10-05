@@ -68,7 +68,7 @@ class EmbedCache:
             for text, vec in zip(texts, vectors):
                 h = self.content_hash(text)
                 dim = len(vec)
-                blob = struct.pack(f"{dim}f", *vec.astype(np.float32).tolist())
+                blob = vec.astype(np.float32).tobytes()
                 self.conn.execute(
                     "INSERT OR REPLACE INTO embed_cache (content_hash, model_name, dim, vector) VALUES (?, ?, ?, ?)",
                     (h, model_name, dim, blob),
