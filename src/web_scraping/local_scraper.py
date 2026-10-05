@@ -7,6 +7,7 @@ import re
 import ssl
 import logging
 import urllib.request
+import urllib.error
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 from datetime import datetime
@@ -149,7 +150,7 @@ class WebScraper:
         main = (
             soup.find("main")
             or soup.find("article")
-            or soup.find(attrs={"role": "main"})
+            or soup.find(role="main")
             or soup.find(class_="content")
             or soup.body
         )

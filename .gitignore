@@ -12,6 +12,8 @@ build/
 # Data (runtime generated)
 data/
 *.db
+*.db-wal
+*.db-shm
 
 # IDE
 .vscode/
@@ -22,12 +24,13 @@ data/
 # Environment
 .env
 
+# Tests and benchmarks
+tests/benchmark_data/
+tests/*.json
+
 # OS
 .DS_Store
 Thumbs.db
-
-# Old frontend (to be deleted manually)
-frontend/
 
 # Misc
 .mypy_cache/

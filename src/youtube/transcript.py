@@ -6,7 +6,7 @@ import re
 import logging
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 from src.document_processing.document_chunk import DocumentChunk
@@ -20,7 +20,7 @@ class YouTubeTranscriptExtractor:
     """Extract transcripts from YouTube videos using yt-dlp subtitles."""
 
     def __init__(self, chunking: Optional[ChunkingService] = None):
-        self.temp_dir = Path(tempfile.gettempdir()) / "docchat_yt"
+        self.temp_dir = Path(tempfile.gettempdir()) / "carnetlm_yt"
         self.temp_dir.mkdir(exist_ok=True)
         self.chunking = chunking or ChunkingService.from_preset("balanced")
 
@@ -45,14 +45,14 @@ class YouTubeTranscriptExtractor:
 
         logger.info(f"Extracting transcript for YouTube video: {video_id}")
 
-        info_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        info_opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True}
 
-        with yt_dlp.YoutubeDL(info_opts) as ydl:
+        with yt_dlp.YoutubeDL(info_opts) as ydl: # type: ignore
             info = ydl.extract_info(url, download=False)
-            video_title = info.get("title", f"YouTube Video {video_id}")
+            video_title = str(info.get("title") or f"YouTube Video {video_id}")
             description = info.get("description", "")
 
-        sub_opts = {
+        sub_opts: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
@@ -63,7 +63,7 @@ class YouTubeTranscriptExtractor:
             "outtmpl": str(self.temp_dir / "%(id)s"),
         }
 
-        with yt_dlp.YoutubeDL(sub_opts) as ydl:
+        with yt_dlp.YoutubeDL(sub_opts) as ydl: # type: ignore
             ydl.download([url])
 
         possible_files = list(self.temp_dir.glob(f"{video_id}*.vtt"))

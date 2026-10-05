@@ -61,7 +61,10 @@ def _filter_candidates(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
 def _search_duckduckgo(query: str, max_results: int) -> List[Dict[str, Any]]:
     try:
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
 
         results: List[Dict[str, Any]] = []
         with DDGS() as ddgs:
@@ -73,7 +76,7 @@ def _search_duckduckgo(query: str, max_results: int) -> List[Dict[str, Any]]:
                 })
         return results
     except ImportError:
-        logger.warning("duckduckgo-search not installed")
+        logger.warning("Neither ddgs nor duckduckgo-search installed")
         return []
     except Exception as e:
         logger.error(f"DuckDuckGo search failed: {e}")

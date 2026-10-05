@@ -23,7 +23,7 @@ def extract_text_from_image(image_data) -> str:
     try:
         reader = get_ocr_reader()
         results = reader.readtext(image_data, detail=0)
-        return " ".join(results).strip()
+        return " ".join(str(r) for r in results).strip()
     except Exception as e:
         logger.error(f"Local EasyOCR text extraction failed: {e}")
         return ""

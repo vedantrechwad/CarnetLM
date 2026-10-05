@@ -11,7 +11,6 @@ import logging
 import threading
 import os
 import secrets
-import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -268,7 +267,7 @@ class LocalMemoryLayer:
                 (name, now, now, is_private, password_hash, security_question, security_answer_hash),
             )
             self.conn.commit()
-            return cursor.lastrowid
+            return int(cursor.lastrowid or 0)
 
     def list_notebooks(self) -> List[Dict[str, Any]]:
         """List all notebooks with counts in a single query."""
@@ -525,7 +524,7 @@ class LocalMemoryLayer:
             )
             self.conn.commit()
             self._touch_notebook(notebook_id)
-            return cursor.lastrowid
+            return int(cursor.lastrowid or 0)
 
     def get_sources(self, notebook_id: int = 1) -> List[Dict[str, Any]]:
         """Get all tracked sources for a notebook."""
@@ -670,7 +669,7 @@ class LocalMemoryLayer:
             )
             self.conn.commit()
             self._touch_notebook(notebook_id)
-            return cursor.lastrowid
+            return int(cursor.lastrowid or 0)
 
     def update_note(self, note_id: int, title: Optional[str] = None, content: Optional[str] = None) -> bool:
         """Update a note's title and/or content."""
@@ -1004,7 +1003,7 @@ class LocalMemoryLayer:
             (notebook_id, title, explanation, links_json, x, y, sort_order, now)
         )
         self.conn.commit()
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def update_concept(self, concept_id: int, title: Optional[str] = None, explanation: Optional[str] = None, links_json: Optional[str] = None, x: Optional[int] = None, y: Optional[int] = None) -> bool:
         cursor = self.conn.cursor()

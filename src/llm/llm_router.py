@@ -54,7 +54,7 @@ class LLMRouter:
         self.ollama_model = ollama_model
         self._http_client = httpx.Client(timeout=120.0)
         self._ollama_process = None  # Track the subprocess we started
-        self._gemini_client = None  # Reusable Gemini client
+        self._gemini_client: Any = None  # Reusable Gemini client
         self._force_provider = None  # User-selected provider override
         self._ollama_check_cache: Optional[bool] = None  # Cached availability
         self._ollama_check_time: float = 0.0  # Timestamp of last check
@@ -70,7 +70,7 @@ class LLMRouter:
         # Initialize Gemini client once if available
         if self.gemini_available:
             try:
-                from google import genai
+                from google import genai  # type: ignore
                 self._gemini_client = genai.Client(api_key=self.gemini_api_key)
                 logger.info("LLM Router: Gemini API configured (primary)")
             except Exception as e:
@@ -331,7 +331,7 @@ class LLMRouter:
         max_tokens: int,
     ):
         """Stream tokens from Gemini API."""
-        from google.genai import types
+        from google.genai import types  # type: ignore
 
         config = types.GenerateContentConfig(
             temperature=temperature,
@@ -355,7 +355,7 @@ class LLMRouter:
         temperature: float, max_tokens: int,
     ) -> LLMResponse:
         """Generate using the Google GenAI SDK (reuses client)."""
-        from google.genai import types
+        from google.genai import types  # type: ignore
 
         config = types.GenerateContentConfig(
             temperature=temperature,

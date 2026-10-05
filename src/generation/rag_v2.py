@@ -26,6 +26,15 @@ from src.generation.notebook_bm25 import notebook_bm25_cache
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Minimum cosine similarity score for a chunk to be considered relevant.
+# Chunks below this threshold are dropped before being sent to the LLM.
+# Tuned for BAAI/bge-small-en-v1.5 embeddings (cosine similarity 0–1 range).
+MIN_RELEVANCE_SCORE = 0.40
+
+# If the *best* retrieved chunk is below this score, the query is considered
+# out-of-scope (not covered by the notebook's sources).
+OUT_OF_SCOPE_THRESHOLD = 0.35
+
 
 CONTEXT_PROFILES = {
     (0, 4096): {
@@ -110,13 +119,24 @@ class RAGResult:
 class RAGGeneratorV2:
     """Advanced RAG Generator with hybrid search, HyDE, and reranking."""
 
-    SYSTEM_PROMPT = """You are an AI assistant that answers questions using provided source material.
+    SYSTEM_PROMPT = """You are a precise academic assistant. Answer questions using ONLY the provided source material.
 
-Rules:
-1. Cite sources with [1], [2], etc. for each factual claim.
-2. Only use information from the provided context.
-3. If no relevant info found, say so clearly.
-4. When multiple sources support a point, list all: [1], [2]."""
+Citation rules:
+- Cite sources as [1], [2], etc. ONLY when the source DIRECTLY supports a specific claim.
+- Do NOT cite a source just because it appears in the context. Only cite if the information is clearly relevant.
+- If multiple sources support the same point, cite all: [1][2].
+- Place citations at the end of the sentence they support, before the period.
+
+Out-of-scope handling:
+- If the provided context does NOT contain information relevant to the question, respond EXACTLY with:
+  "I couldn't find relevant information about this topic in your uploaded documents. This question doesn't appear to be covered in your current sources."
+- Do NOT fabricate or infer answers beyond what the sources explicitly state.
+- Do NOT force-fit unrelated context to answer the question.
+
+Formatting:
+- Format mathematical expressions using LaTeX: use $...$ for inline math and $$...$$ for display/block math.
+- Use **bold** for key terms and `code` for technical identifiers.
+- Structure longer answers with clear paragraphs."""
 
     def __init__(
         self,
@@ -285,6 +305,18 @@ Rules:
             })
         self.bm25_index.build_index(docs)
 
+    def _check_out_of_scope(self, vector_results: List[Dict[str, Any]]) -> bool:
+        """Check if the best retrieval score is too low, indicating an out-of-scope query."""
+        if not vector_results:
+            return True
+        best_score = max(
+            r.get("score", r.get("rrf_score", 0)) for r in vector_results
+        )
+        if best_score < OUT_OF_SCOPE_THRESHOLD:
+            logger.info(f"Out-of-scope query detected (best score: {best_score:.3f} < {OUT_OF_SCOPE_THRESHOLD})")
+            return True
+        return False
+
     def generate_response(
         self,
         query: str,
@@ -334,6 +366,14 @@ Rules:
                     sources_used=[], retrieval_count=0,
                 )
 
+            # ── Step 2.5: Out-of-scope detection ───────────────────────
+            if self._check_out_of_scope(vector_results):
+                return RAGResult(
+                    query=query,
+                    response="I couldn't find relevant information about this topic in your uploaded documents. This question doesn't appear to be covered in your current sources.",
+                    sources_used=[], retrieval_count=0,
+                )
+
             # ── Step 3: Hybrid search (full-corpus BM25 + RRF) ─────────
             vector_results = self._apply_hybrid_search(
                 vector_results, notebook_id, query, top_k, use_hybrid
@@ -353,10 +393,18 @@ Rules:
             if use_reranking and len(vector_results) > max_chunks:
                 vector_results = self._rerank_chunks(query, vector_results, max_chunks)
 
-            # ── Step 5: Format context with citations ──────────────────
+            # ── Step 5: Format context with citations (relevance-filtered) ──
             context, sources_info = self._format_context(
                 vector_results, max_chunks, max_context_chars
             )
+
+            if not context.strip():
+                # All chunks were below the relevance threshold
+                return RAGResult(
+                    query=query,
+                    response="I couldn't find relevant information about this topic in your uploaded documents. This question doesn't appear to be covered in your current sources.",
+                    sources_used=[], retrieval_count=0,
+                )
 
             # ── Step 6: Build prompt and generate ──────────────────────
             prompt = self._build_prompt(query, context, conversation_context)
@@ -394,15 +442,30 @@ Rules:
         self, search_results: List[Dict[str, Any]],
         max_chunks: int, max_context_chars: int,
     ) -> Tuple[str, List[Dict[str, Any]]]:
-        """Format retrieved chunks with citation references."""
+        """Format retrieved chunks with citation references.
+        
+        Filters out chunks below MIN_RELEVANCE_SCORE to prevent
+        irrelevant material from being cited.
+        """
         context_parts = []
         sources_info = []
         total_chars = 0
+        citation_index = 0
 
-        for i, result in enumerate(search_results[:max_chunks]):
+        for result in search_results[:max_chunks * 2]:  # Check more, keep fewer
+            # ── Relevance gate: skip low-quality chunks ────────────────
+            score = result.get("score", result.get("rrf_score", 0))
+            if score < MIN_RELEVANCE_SCORE:
+                logger.debug(f"Skipping chunk (score {score:.3f} < {MIN_RELEVANCE_SCORE}): {result['content'][:60]}...")
+                continue
+
+            if citation_index >= max_chunks:
+                break
+
             citation = result.get("citation", {})
-            ref = f"[{i + 1}]"
-            chunk_text = f"{ref} {result['content']}"
+            citation_index += 1
+            ref = f"[{citation_index}]"
+            chunk_text = f"{ref} (relevance: {score:.2f}) {result['content']}"
 
             if total_chars + len(chunk_text) > max_context_chars and context_parts:
                 break
@@ -417,9 +480,12 @@ Rules:
                 "page_number": citation.get("page_number"),
                 "chunk_id": result.get("id", ""),
                 "chunk_index": citation.get("chunk_index"),
-                "relevance_score": result.get("score", result.get("rrf_score", 0)),
+                "relevance_score": score,
                 "text": result["content"][:300],
             })
+
+        if context_parts:
+            logger.info(f"Context formatted: {len(sources_info)} relevant chunks (filtered from {len(search_results)})")
 
         return "\n\n".join(context_parts), sources_info
 
@@ -430,12 +496,16 @@ Rules:
             conv_section = f"\nPREVIOUS CONVERSATION:\n{conversation_context}\n"
 
         return f"""{conv_section}
-CONTEXT (with citation references):
+SOURCE MATERIAL (each prefixed with [N] and a relevance score):
 {context}
 
 QUESTION: {query}
 
-Provide a comprehensive answer with proper citations. Every factual statement must be supported by a citation reference."""
+Instructions:
+- Answer the question using the source material above.
+- Cite sources as [1], [2] etc. ONLY when a source directly supports a specific claim. Do not cite every source.
+- If the sources do not contain information relevant to this question, say so clearly — do not guess or force an answer.
+- Use LaTeX notation for any math: $...$ for inline, $$...$$ for display equations."""
 
     def prepare_response(
         self,
@@ -472,6 +542,10 @@ Provide a comprehensive answer with proper citations. Every factual statement mu
         if not vector_results:
             return "", self.SYSTEM_PROMPT, [], 0, settings
 
+        # Out-of-scope detection (same as generate_response)
+        if self._check_out_of_scope(vector_results):
+            return "", self.SYSTEM_PROMPT, [], 0, settings
+
         vector_results = self._apply_hybrid_search(
             vector_results, notebook_id, query, top_k, use_hybrid
         )
@@ -482,6 +556,11 @@ Provide a comprehensive answer with proper citations. Every factual statement mu
         context, sources_info = self._format_context(
             vector_results, max_chunks, max_context_chars
         )
+
+        # All chunks may have been filtered out by relevance threshold
+        if not context.strip():
+            return "", self.SYSTEM_PROMPT, [], 0, settings
+
         prompt = self._build_prompt(query, context, conversation_context)
         settings["max_tokens"] = max_tokens
         return prompt, self.SYSTEM_PROMPT, sources_info, len(vector_results), settings

@@ -35,7 +35,7 @@ class BM25Index:
             self._corpus = documents
             self._corpus_texts = [doc.get("content", "") for doc in documents]
 
-            self._retriever = bm25s.BM25(corpus=self._corpus_texts)
+            self._retriever = bm25s.BM25(corpus=list(range(len(documents))))
             self._retriever.index(bm25s.tokenize(self._corpus_texts))
 
             logger.info(f"BM25 index built with {len(documents)} documents")

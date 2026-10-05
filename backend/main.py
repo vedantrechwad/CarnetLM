@@ -11,7 +11,7 @@ import logging
 import hashlib
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
@@ -29,16 +29,16 @@ logger = logging.getLogger(__name__)
 
 # ─── Global State ──────────────────────────────────────────────────────────────
 
-_llm_router = None
-_doc_processor = None
-_embedding_generator = None
-_vector_db = None
-_rag_generator = None
-_web_scraper = None
-_youtube_extractor = None
-_memory = None
-_ingest_jobs = None
-_orpheus_tts = None
+_llm_router: Any = None
+_doc_processor: Any = None
+_embedding_generator: Any = None
+_vector_db: Any = None
+_rag_generator: Any = None
+_web_scraper: Any = None
+_youtube_extractor: Any = None
+_memory: Any = None
+_ingest_jobs: Any = None
+_orpheus_tts: Any = None
 
 
 def _initialize():
@@ -72,8 +72,8 @@ def _initialize():
     _doc_processor = DocumentProcessor()
     _embedding_generator = EmbeddingGenerator()
     _vector_db = MilvusVectorDB(
-        db_path="./data/docchat.db",
-        collection_name="docchat",
+        db_path="./data/carnetlm.db",
+        collection_name="carnetlm",
         embedding_dim=_embedding_generator.get_embedding_dimension(),
     )
     _web_scraper = WebScraper()
@@ -525,7 +525,7 @@ async def create_notebook(request: NotebookCreate):
         raise HTTPException(status_code=503, detail="Not initialized")
     nb_id = _memory.create_notebook(
         name=request.name,
-        is_private=request.is_private,
+        is_private=int(request.is_private or 0),
         password_hash=request.password_hash,
         security_question=request.security_question,
         security_answer_hash=request.security_answer_hash,
@@ -1025,8 +1025,8 @@ async def chat_stream(request: ChatRequest):
 
     def event_generator():
         full_text = []
-        sources_used = []
-        retrieval_count = 0
+        sources_used: Any = []
+        retrieval_count: Any = 0
         try:
             for event_type, data in _rag_generator.generate_response_stream(
                 query=request.query,
@@ -1085,6 +1085,63 @@ async def clear_history(notebook_id: int = Query(1)):
 
 # ─── Auto-Summary ──────────────────────────────────────────────────────────────
 
+def _clean_study_guide_content(raw_text: str) -> str:
+    """Format and clean study guide content, converting raw JSON artifacts into structured Markdown."""
+    if not raw_text or not isinstance(raw_text, str):
+        return raw_text or ""
+
+    text = raw_text.strip()
+    
+    # Check for embedded JSON objects (fenced with backticks or raw curly braces)
+    json_match = re.search(
+        r"```(?:json)?\s*(\{[\s\S]*?\})\s*```|`{1,2}(?:json)?\s*(\{[\s\S]*?\})\s*`{1,2}|(^\s*\{[\s\S]*?\n\s*\})",
+        text,
+        re.MULTILINE,
+    )
+    
+    if json_match:
+        raw_json = json_match.group(1) or json_match.group(2) or json_match.group(3)
+        try:
+            data = json.loads(raw_json)
+            if isinstance(data, dict):
+                md_parts = []
+                if data.get("title"):
+                    md_parts.append(f"# {data['title']}\n")
+                if data.get("summary"):
+                    md_parts.append(f"## Executive Summary\n{data['summary']}\n")
+                if data.get("rating"):
+                    exp = f" — {data['rating explanation']}" if data.get("rating explanation") else ""
+                    md_parts.append(f"**Material Depth Rating**: {data['rating']}/10{exp}\n")
+                if data.get("findings") and isinstance(data["findings"], list):
+                    md_parts.append("## Key Findings\n")
+                    for f in data["findings"]:
+                        if isinstance(f, dict):
+                            s = f.get("summary", "")
+                            e = f.get("explanation", "")
+                            if s and e:
+                                md_parts.append(f"- **{s}**: {e}")
+                            elif s or e:
+                                md_parts.append(f"- {s or e}")
+                        else:
+                            md_parts.append(f"- {f}")
+                    md_parts.append("")
+                
+                # Append the remainder of the markdown text (e.g. ### Key Concepts, ### Important Details)
+                end_pos = json_match.end()
+                rest = text[end_pos:].strip()
+                if rest:
+                    md_parts.append(rest)
+                
+                return "\n".join(md_parts).strip()
+        except Exception as e:
+            logger.debug(f"Could not parse embedded JSON in study guide: {e}")
+
+    # Strip any stray backtick fences if still present
+    text = re.sub(r"^`{2,3}(?:json)?\s*", "", text)
+    text = re.sub(r"\s*`{2,3}$", "", text)
+    return text.strip()
+
+
 @app.get("/api/summary")
 async def get_summary(notebook_id: int = Query(...)):
     """Fetch saved study guide/summary for a notebook."""
@@ -1092,7 +1149,13 @@ async def get_summary(notebook_id: int = Query(...)):
         raise HTTPException(status_code=503, detail="Not initialized")
     guide = _memory.get_study_guide(notebook_id)
     if guide:
-        return json.loads(guide)
+        try:
+            data = json.loads(guide)
+            if isinstance(data, dict) and "summary" in data:
+                data["summary"] = _clean_study_guide_content(data["summary"])
+            return data
+        except Exception:
+            return {"summary": _clean_study_guide_content(guide), "sources_used": []}
     return {"summary": "", "sources_used": []}
 
 
@@ -1142,25 +1205,33 @@ async def generate_summary(request: SummaryRequest):
 
     try:
         result = _llm_router.generate(
-            prompt=f"""Based on the following source material, create a comprehensive study guide.
+            prompt=f"""Based on the following source material, create a comprehensive, highly readable study guide.
 Cite the sources you use using their numbers, e.g. [1], [2], etc.
 
-Rules:
-1. Every major fact, concept, or summary MUST be grounded in the context and cite the corresponding source numbers, e.g. [1].
-2. Structure the guide with the following sections:
-   - **Executive Summary**: A high-level overview of the notebook materials.
-   - **Key Concepts**: Core terms, definitions, and theories, citing source numbers.
-   - **Important Details**: Facts, figures, or notable connections.
+IMPORTANT FORMATTING RULES:
+1. Output directly in human-readable Markdown format.
+2. DO NOT output raw JSON objects, JSON dictionaries, or code fences (never use ```json or curly braces for the document structure).
+3. Structure the guide with these exact markdown sections:
+   ## Executive Summary
+   A comprehensive high-level overview of the topics and key takeaways.
+
+   ## Key Concepts
+   Core terms, theories, and definitions with citations [1], [2].
+
+   ## Important Details & Findings
+   Key findings, comparative points, and practical applications.
 
 Source Material:
 {context}""",
-            system_prompt="You are an expert study guide creator. Create structured summaries with clear source citations [1], [2], etc.",
+            system_prompt="You are an expert study guide creator. Produce well-structured, beautiful Markdown documents with clear citations [1], [2]. Never output raw JSON code blocks.",
             temperature=0.3,
             max_tokens=2000,
         )
         
+        cleaned_content = _clean_study_guide_content(result.content)
+
         guide_data = {
-            "summary": result.content,
+            "summary": cleaned_content,
             "sources_used": sources_used,
             "provider": result.provider,
             "model": result.model,
@@ -1521,9 +1592,9 @@ async def refresh_source(request: RefreshSourceRequest):
 
     try:
         _apply_notebook_chunking(nb_id)
+        url = metadata.get("url") or metadata.get("name", "")
         if source_type == "Website":
             # Re-scrape
-            url = metadata.get("url") or metadata.get("name", "")
             if not url.startswith("http"):
                 raise HTTPException(status_code=400, detail="Cannot determine URL for this source")
             chunks = _web_scraper.scrape_url(url)
@@ -1733,7 +1804,7 @@ async def export_document(request: ExportRequest):
 
     elif request.format == "md":
         try:
-            from markdownify import markdownify
+            from markdownify import markdownify  # type: ignore
             md = markdownify(request.html, heading_style="ATX", strip=["img"])
             return Response(
                 content=md.encode("utf-8"),
@@ -1752,7 +1823,7 @@ async def export_document(request: ExportRequest):
     elif request.format == "docx":
         try:
             from docx import Document
-            from htmldocx import HtmlToDocx
+            from htmldocx import HtmlToDocx  # type: ignore
 
             doc = Document()
             parser = HtmlToDocx()
@@ -1808,6 +1879,43 @@ class DeckGenerateRequest(BaseModel):
     notebook_id: int
     count: int = 10
     focus_topic: Optional[str] = None
+
+def extract_json_from_llm_response(text: str) -> Any:
+    """Robustly extract JSON from LLM output, handling markdown blocks and leading/trailing text."""
+    text = text.strip()
+    
+    # Try to find a markdown code block containing JSON
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if match:
+        text = match.group(1).strip()
+        
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+        
+    # Fallback: find the first [ or { and the last ] or }
+    start_array = text.find('[')
+    end_array = text.rfind(']')
+    start_obj = text.find('{')
+    end_obj = text.rfind('}')
+    
+    start_idx = -1
+    end_idx = -1
+    if start_array != -1 and (start_obj == -1 or start_array < start_obj):
+        start_idx = start_array
+        end_idx = end_array
+    elif start_obj != -1:
+        start_idx = start_obj
+        end_idx = end_obj
+        
+    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+        try:
+            return json.loads(text[start_idx:end_idx+1])
+        except json.JSONDecodeError:
+            pass
+            
+    raise ValueError("Could not extract valid JSON from LLM response.")
 
 @app.post("/api/concepts/generate-deck")
 async def generate_flashcard_deck(request: DeckGenerateRequest):
@@ -1870,17 +1978,8 @@ Respond ONLY with a valid JSON array in this exact format, with no other text or
             temperature=0.2,
             max_tokens=1500
         )
-        raw = res.content.strip()
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0].strip()
-
-        match = re.search(r'\[\s*\{.*\}\s*\]', raw, re.DOTALL)
-        if match:
-            raw = match.group(0)
-
-        cards_data = json.loads(raw)
+        
+        cards_data = extract_json_from_llm_response(res.content)
         created_cards = []
         source_links = list(sources_seen) if sources_seen else []
 
@@ -1962,17 +2061,8 @@ Output ONLY a raw JSON object:
             temperature=0.2,
             max_tokens=600
         )
-        raw_json = res.content.strip()
-        if "```json" in raw_json:
-            raw_json = raw_json.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_json:
-            raw_json = raw_json.split("```")[1].split("```")[0].strip()
-
-        match = re.search(r'\{.*\}', raw_json, re.DOTALL)
-        if match:
-            raw_json = match.group(0)
-
-        data = json.loads(raw_json)
+        
+        data = extract_json_from_llm_response(res.content)
         title = data.get("title", prompt_text).strip()
         explanation = data.get("explanation", "").strip()
 
@@ -2024,27 +2114,26 @@ Output ONLY a raw JSON object:
             "leitner_box": 1
         }
 
-@app.get("/api/concepts")
-async def get_concepts(notebook_id: int = Query(...)):
-    """Fetch all concepts for a notebook. If empty, automatically generate high-yield flashcards from uploaded sources."""
+def _auto_generate_concepts_task(notebook_id: int):
+    """Background task to generate initial flashcards."""
     if not _memory or not _llm_router:
-        raise HTTPException(status_code=503, detail="Not initialized")
-
-    concepts = _memory.list_concepts(notebook_id)
-    if not concepts:
+        return
+    
+    try:
         chunks = _memory.get_chunk_texts_by_notebook(notebook_id)
-        if chunks:
-            sources = _memory.get_sources(notebook_id)
-            source_name = sources[0]["name"] if sources else ""
+        if not chunks:
+            return
             
-            # Sample up to 6 chunks for instant generation
-            sampled = []
-            for c in chunks[:6]:
-                if c.get("content"):
-                    sampled.append(c["content"][:400])
-            source_content = "\n\n---\n\n".join(sampled)[:2400]
+        sources = _memory.get_sources(notebook_id)
+        source_name = sources[0]["name"] if sources else ""
+        
+        sampled = []
+        for c in chunks[:6]:
+            if c.get("content"):
+                sampled.append(c["content"][:400])
+        source_content = "\n\n---\n\n".join(sampled)[:2400]
 
-            prompt = f"""You are an elite tutor. Create 4 high-yield active-recall flashcards based on this source text:
+        prompt = f"""You are an elite tutor. Create 4 high-yield active-recall flashcards based on this source text:
 {source_content}
 
 Requirements:
@@ -2055,42 +2144,42 @@ Output ONLY a JSON array:
 [
   {{"title": "Question or Key Term", "explanation": "Clear, informative 2-3 sentence explanation."}}
 ]"""
-            try:
-                res = _llm_router.generate(
-                    prompt=prompt,
-                    system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array.",
-                    temperature=0.2,
-                    max_tokens=1000
+        res = _llm_router.generate(
+            prompt=prompt,
+            system_prompt="You are a JSON-only response writer. Output ONLY a valid raw JSON array.",
+            temperature=0.2,
+            max_tokens=1000
+        )
+        
+        initial_concepts = extract_json_from_llm_response(res.content)
+        for index, ic in enumerate(initial_concepts):
+            title = str(ic.get("title", "")).strip()
+            explanation = str(ic.get("explanation", "")).strip()
+            if title and explanation:
+                links = [source_name] if source_name else []
+                _memory.create_concept(
+                    notebook_id=notebook_id,
+                    title=title,
+                    explanation=explanation,
+                    links_json=json.dumps(links),
+                    x=50 + (index * 320),
+                    y=50,
+                    sort_order=index
                 )
-                raw_json = res.content.strip()
-                if "```json" in raw_json:
-                    raw_json = raw_json.split("```json")[1].split("```")[0].strip()
-                elif "```" in raw_json:
-                    raw_json = raw_json.split("```")[1].split("```")[0].strip()
+    except Exception as e:
+        logger.warning(f"Could not auto-generate initial concepts: {e}")
 
-                match = re.search(r'\[\s*\{.*\}\s*\]', raw_json, re.DOTALL)
-                if match:
-                    raw_json = match.group(0)
 
-                initial_concepts = json.loads(raw_json)
-                for index, ic in enumerate(initial_concepts):
-                    title = ic.get("title", "").strip()
-                    explanation = ic.get("explanation", "").strip()
-                    if title and explanation:
-                        links = [source_name] if source_name else []
-                        _memory.create_concept(
-                            notebook_id=notebook_id,
-                            title=title,
-                            explanation=explanation,
-                            links_json=json.dumps(links),
-                            x=50 + (index * 320),
-                            y=50,
-                            sort_order=index
-                        )
-                _memory.mark_concepts_generated(notebook_id)
-            except Exception as e:
-                logger.warning(f"Could not auto-generate initial concepts: {e}")
-            concepts = _memory.list_concepts(notebook_id)
+@app.get("/api/concepts")
+async def get_concepts(background_tasks: BackgroundTasks, notebook_id: int = Query(...)):
+    """Fetch all concepts for a notebook. If empty, automatically generate high-yield flashcards in background."""
+    if not _memory or not _llm_router:
+        raise HTTPException(status_code=503, detail="Not initialized")
+
+    concepts = _memory.list_concepts(notebook_id)
+    if not concepts and not _memory.has_generated_concepts(notebook_id):
+        _memory.mark_concepts_generated(notebook_id)
+        background_tasks.add_task(_auto_generate_concepts_task, notebook_id)
 
     return {"concepts": concepts}
 
@@ -2193,6 +2282,18 @@ async def serve_frontend():
     if index_path.exists():
         return FileResponse(str(index_path))
     return {"message": "CarnetLM API is running. Frontend not found at /static/index.html"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    svg_icon = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+        '<rect width="32" height="32" rx="8" fill="#6366f1"/>'
+        '<path d="M8 8h16v16H8z" fill="none" stroke="#fff" stroke-width="2"/>'
+        '<path d="M12 12h8M12 16h8M12 20h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'
+        '</svg>'
+    )
+    return Response(content=svg_icon, media_type="image/svg+xml")
 
 
 if __name__ == "__main__":

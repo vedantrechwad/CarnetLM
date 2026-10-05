@@ -70,13 +70,13 @@ class MilvusVectorDB:
     def __init__(
         self, 
         db_path: str = "./milvus_lite.db",
-        collection_name: str = "notebook_lm",
+        collection_name: str = "carnetlm",
         embedding_dim: int = 384
     ):
         self.db_path = db_path
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
-        self.client = None
+        self.client: Any = None
         self.collection_exists = False
         
         self._initialize_client()
@@ -473,7 +473,7 @@ class MilvusVectorDB:
                         
                         # Add references for reused chunks
                         if chunk_ids_to_reference:
-                            ref_tracker.add_references_batch(chunk_ids_to_reference, notebook_id, source_file)
+                            ref_tracker.add_references_batch(chunk_ids_to_reference, notebook_id, source_file or "")
                         
                         if reused_chunks:
                             logger.info(f"Reused {len(reused_chunks)} existing chunks for notebook {notebook_id}")
@@ -487,7 +487,7 @@ class MilvusVectorDB:
                             
                             # Add references for new chunks
                             new_chunk_ids = [chunk['id'] for chunk in new_chunks]
-                            ref_tracker.add_references_batch(new_chunk_ids, notebook_id, source_file)
+                            ref_tracker.add_references_batch(new_chunk_ids, notebook_id, source_file or "")
                             
                             logger.info(f"Inserted {len(new_chunks)} new chunks for notebook {notebook_id}")
                             return new_chunk_ids
@@ -503,7 +503,7 @@ class MilvusVectorDB:
                             data=data
                         )
                         chunk_ids = [chunk['id'] for chunk in data]
-                        ref_tracker.add_references_batch(chunk_ids, notebook_id, source_file)
+                        ref_tracker.add_references_batch(chunk_ids, notebook_id, source_file or "")
                         return chunk_ids
 
                 # Fallback for no content hashes
@@ -512,7 +512,7 @@ class MilvusVectorDB:
                     data=data
                 )
                 inserted_ids = [item['id'] for item in data]
-                ref_tracker.add_references_batch(inserted_ids, notebook_id, source_file)
+                ref_tracker.add_references_batch(inserted_ids, notebook_id, source_file or "")
                 logger.info(f"Inserted {len(inserted_ids)} embeddings into database (notebook {notebook_id})")
                 return inserted_ids
 
@@ -524,6 +524,7 @@ class MilvusVectorDB:
                 else:
                     logger.error(f"Error inserting embeddings after {max_retries} attempts: {str(e)}")
                     raise
+        return []
     
     def search(
         self,
@@ -581,7 +582,7 @@ class MilvusVectorDB:
                 anns_field="vector",
                 limit=limit,
                 search_params=search_params,
-                filter=final_filter,
+                filter=final_filter or "",
                 output_fields=[
                     "content", "source_file", "source_type", "page_number",
                     "chunk_index", "start_char", "end_char", "metadata", "embedding_model",
