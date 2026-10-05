@@ -92,10 +92,9 @@ CarnetLM/
 CarnetLM runs entirely on your local machine:
 
 1. Download and install [Ollama](https://ollama.ai).
-2. Make sure Ollama is running in the background.
-3. Pull the recommended model (Qwen 2.5):
+2. Download the recommended model (qwen2.5:7b ):
    ```bash
-   ollama pull qwen2.5
+   ollama pull qwen2.5:7b 
    ```
 
 ### 2. Configure Environment
