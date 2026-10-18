@@ -140,21 +140,21 @@ To assess preprocessing overhead during document ingestion, synthetic and techni
 
 ### B. Dense Embedding Throughput and Batch Scaling
 
-Vectorizing textual chunks into 384-dimensional dense space represents the first linear algebraic stage of the ingestion pipeline. We evaluated FastEmbed (`bge-small-en-v1.5`) across batch sizes $B \in \{1, 8, 16, 32, 64\}$.
+Vectorizing textual chunks into 384-dimensional dense space represents the first linear algebraic stage of the ingestion pipeline. We evaluated FastEmbed (`bge-small-en-v1.5`) across batch sizes $B \in \{1, 8, 16, 32, 64\}$, measuring both uncached neural inference (Cache OFF) and warm replay (Cache ON).
 
 #### TABLE IV: Embedding Latency and Throughput Scaling (FastEmbed ONNX)
 
-| Batch Size ($B$) | Total Latency (ms) | Latency Per Chunk (ms) | Throughput (Chunks/sec) | Relative Speedup Factor |
-| :---: | :---: | :---: | :---: | :---: |
-| **1** | 0.11 ms | 0.107 ms | 9,328.36 | $1.00\times$ (Baseline) |
-| **8** | 0.23 ms | 0.029 ms | 34,891.84 | $3.74\times$ |
-| **16** | 0.36 ms | 0.022 ms | 44,710.22 | $4.79\times$ |
-| **32** | 0.87 ms | 0.027 ms | 36,871.46 | $3.95\times$ |
-| **64** | **1.29 ms** | **0.020 ms** | **49,640.11** | **$5.32\times$** |
+| Batch Size ($B$) | Cache OFF Total Latency (ms) | Cache OFF Per-Chunk Latency (ms) | Cache OFF Throughput (Chunks/sec) | Real Speedup | Cache ON Total Latency (ms) | Cache ON Per-Chunk Latency (ms) | Cache ON Throughput (Chunks/sec) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1** | 20.88 ms | 20.88 ms | 47.88 | $1.00\times$ | 0.13 ms | 0.129 ms | 7,782.10 |
+| **8** | 68.86 ms | 8.61 ms | 116.18 | $2.43\times$ | 0.21 ms | 0.027 ms | 37,435.66 |
+| **16** | 120.37 ms | 7.52 ms | 132.93 | $2.78\times$ | 0.30 ms | 0.019 ms | 52,645.43 |
+| **32** | 219.46 ms | 6.86 ms | 145.81 | $3.05\times$ | 0.51 ms | 0.016 ms | 62,705.75 |
+| **64** | **427.74 ms** | **6.68 ms** | **149.62** | **$3.12\times$** | **0.98 ms** | **0.015 ms** | **65,441.01** |
 
-*Fig. 6: Dense embedding throughput (FastEmbed ONNX, `bge-small-en-v1.5`) across increasing batch sizes ($B = 1$ to $64$). Demonstrates a $5.32\times$ throughput scaling peaking at $49,640\text{ chunks/sec}$ as per-chunk latency drops from $0.11\text{ ms}$ to $0.020\text{ ms}$ via CPU SIMD vectorization and cache locality.*
+*Fig. 6: Dense embedding throughput (FastEmbed ONNX, `bge-small-en-v1.5`) across increasing batch sizes ($B = 1$ to $64$). Demonstrates a $3.12\times$ throughput scaling peaking at $149.62\text{ chunks/sec}$ as per-chunk latency drops from $20.88\text{ ms}$ to $6.68\text{ ms}$ via CPU SIMD vectorization and GEMM batch parallelism. Warm cache replay scales up to $65,441\text{ chunks/sec}$ ($0.015\text{ ms/chunk}$).*
 
-*Analysis*: Batched ONNX execution exhibits significant SIMD vectorization and cache locality benefits. Moving from unbatched processing ($B=1$) to $B=64$ decreases per-chunk embedding latency from $0.11\text{ ms}$ to $0.020\text{ ms}$, achieving a **$5.32\times$ throughput speedup** ($49,640\text{ chunks/sec}$). For an average document containing 250 chunks, complete dense vectorization is achieved in approximately **5.1 milliseconds**.
+*Analysis*: Batched ONNX execution exhibits significant SIMD vectorization and cache locality benefits. Moving from unbatched processing ($B=1$) to $B=64$ decreases per-chunk embedding latency from $20.88\text{ ms}$ to $6.68\text{ ms}$, achieving a **$3.12\times$ throughput speedup** ($149.62\text{ chunks/sec}$). For an average document containing 250 chunks, initial cold dense vectorization completes in approximately **1.67 seconds**, while subsequent re-indexing against the SQLite content-hash cache takes just **3.8 milliseconds**.
 
 ---
 
@@ -199,7 +199,7 @@ Latency (ms)
 
 ### D. Information Retrieval (IR) Accuracy Evaluation
 
-To evaluate retrieval precision, gold-standard domain queries were evaluated against the knowledge base. We report standard Information Retrieval metrics: Hit Rate ($HR@k$), Mean Reciprocal Rank ($MRR@k$), and Precision ($P@k$) for $k \in \{1, 3, 5\}$.
+To evaluate retrieval precision, $N = 10$ gold-standard technical queries spanning 5 distinct scientific disciplines (Quantum Computing, Neuroscience, Distributed Systems, Cardiology, and Aerodynamics) were evaluated against the knowledge base. We report standard Information Retrieval metrics: Hit Rate ($HR@k$), Mean Reciprocal Rank ($MRR@k$), and Precision ($P@k$) for $k \in \{1, 3, 5\}$.
 
 #### TABLE VI: Information Retrieval Performance Metrics ($HR@k$, $MRR@k$, $P@k$)
 
@@ -222,7 +222,7 @@ To evaluate retrieval precision, gold-standard domain queries were evaluated aga
 ### E. End-to-End RAG Pipeline Latency Decomposition
 
 To pinpoint computational bottlenecks in the complete Retrieval-Augmented Generation pipeline, high-precision timestamps were recorded across four distinct sequential phases:
-1. $\tau_{\text{embed}}$: Vectorizing the user prompt.
+1. $\tau_{\text{embed}}$: Vectorizing the user prompt (evaluated uncached and cached).
 2. $\tau_{\text{retrieval}}$: Executing hybrid search and RRF re-ranking.
 3. $\tau_{\text{assembly}}$: Constructing the prompt context with source citation tags.
 4. $\tau_{\text{generation}}$: Autoregressive token decoding by the local LLM (`qwen2.5:7b`).
@@ -231,33 +231,35 @@ To pinpoint computational bottlenecks in the complete Retrieval-Augmented Genera
 
 | Pipeline Stage | Absolute Latency (ms) | Relative Latency (%) | Computational Resource Used |
 | :--- | :---: | :---: | :--- |
-| **1. Query Embedding** | 0.27 ms | $< 0.01\%$ | CPU / ONNX SIMD Vectorization |
+| **1a. Query Embedding (Uncached / Cold)** | **21.29 ms** | **0.36%** | FastEmbed ONNX CPU Forward Pass |
+| **1b. Query Embedding (Warm Cache Hit)** | 0.27 ms | $< 0.01\%$ | SQLite BLOB Unpack / Content-Hash Cache |
 | **2. Hybrid Retrieval (Milvus + BM25s + RRF)** | 35.11 ms | $0.59\%$ | Memory Bus & Local Storage IO |
 | **3. Context Assembly & Injection Guard** | 0.07 ms | $< 0.01\%$ | In-Memory String Interpolation |
-| **4. LLM Autoregressive Generation** | **5,927.37 ms** | **99.40%** | GPU / Tensor Core Compute (CUDA) |
-| **Total End-to-End Execution Time** | **5,962.81 ms** | **100.00%** | System Total |
+| **4. LLM Autoregressive Generation** | **5,927.37 ms** | **99.04%** | GPU / Tensor Core Compute (CUDA) |
+| **Total End-to-End Execution Time (Cold)** | **5,983.84 ms** | **100.00%** | Full System Turnaround (Uncached Embed) |
+| **Total End-to-End Execution Time (Warm)** | **5,962.81 ms** | **100.00%** | Full System Turnaround (Cached Embed) |
 
 ```
-END-TO-END RAG LATENCY CONTRIBUTION
+END-TO-END RAG LATENCY CONTRIBUTION (UNCACHED QUERY EMBEDDING)
 ========================================================================================
-[0.005%] Query Embedding: 0.27 ms
-[0.589%] Hybrid Search: 35.11 ms
+[0.356%] Query Embedding (Uncached): 21.29 ms
+[0.587%] Hybrid Search: 35.11 ms
 [0.001%] Context Assembly: 0.07 ms
-[99.40%] LLM Token Generation: 5,927.37 ms
+[99.056%] LLM Token Generation: 5,927.37 ms
 ========================================================================================
 0%               20%              40%              60%              80%             100%
 +----------------------------------------------------------------------------------+
-| | Hybrid Search (0.59%)                                                          |
+| | Hybrid Search (0.59%) + Query Embedding (0.36%)                                |
 |----------------------------------------------------------------------------------|
 |==================================================================================|
-|                 LLM Autoregressive Token Generation (99.40%)                     |
+|                 LLM Autoregressive Token Generation (99.06%)                     |
 +----------------------------------------------------------------------------------+
 ```
 
-*Fig. 5: Empirical component latency decomposition of the end-to-end RAG query pipeline. Autoregressive LLM decoding accounts for $99.40\%$ ($5,927.37\text{ ms}$) of turnaround latency, while local hybrid retrieval accounts for only $0.59\%$ ($35.11\text{ ms}$) and prompt assembly / query embedding consumes $< 0.01\%$ ($0.34\text{ ms}$).*
+*Fig. 5: Empirical component latency decomposition of the end-to-end RAG query pipeline. Even under a cold, uncached query embedding pass ($\tau_{\text{embed}} = 21.29\text{ ms}$), autoregressive LLM decoding accounts for over $99.05\%$ ($5,927.37\text{ ms}$) of turnaround latency, while local hybrid retrieval accounts for only $0.59\%$ ($35.11\text{ ms}$) and prompt assembly consumes $< 0.01\%$ ($0.07\text{ ms}$).*
 
 #### Key Academic Finding:
-> **The Retrieval Subsystem Is Not the Latency Bottleneck**: Local hybrid retrieval requires only **35.11 ms (0.59%)** of the end-to-end execution window. Over **99.4% of total user-perceived turnaround time is consumed by autoregressive LLM decoding**. This empirical insight proves that adding rich local retrieval steps—including multi-stage RRF re-ranking and OCR extraction—imposes virtually zero noticeable overhead on the user experience.
+> **The Retrieval Subsystem Is Not the Latency Bottleneck**: Local hybrid retrieval and query vectorization combined require only **56.40 ms (0.94%)** of the end-to-end execution window (or **35.38 ms / 0.59%** when warm-cached). Over **99.0% of total user-perceived turnaround time is consumed by autoregressive LLM decoding**. This empirical insight proves that adding rich local retrieval steps—including multi-stage RRF re-ranking and OCR extraction—imposes virtually zero noticeable overhead on the user experience.
 
 ---
 

@@ -9,7 +9,7 @@
 
 Retrieval-Augmented Generation (RAG) has emerged as the premier architecture to mitigate large language model (LLM) hallucinations by grounding generative inference in external verifiable knowledge. However, prevailing cloud-based RAG architectures present severe data sovereignty, intellectual property exposure, and recurring latency bottlenecks. This paper presents an exhaustive empirical performance evaluation and formal verification of **CarnetLM**, a 100% offline, local-first multimodal document research workspace and study assistant. CarnetLM integrates embedded **Milvus Lite** dense vector search, **BM25s** sparse keyword retrieval with **Reciprocal Rank Fusion (RRF)**, **FastEmbed** ONNX transformer embeddings (`BAAI/bge-small-en-v1.5`), an active **Ollama** local LLM inference engine (`qwen2.5:7b`), and a **Leitner 5-box spaced repetition** cognitive flashcard system. 
 
-We systematically verify all 40 functional features of the system—spanning multi-notebook cryptographically partitioned vaults, multi-modal ingestion (PDF, OCR, Markdown, TXT, YouTube transcripts, clipboard), hybrid retrieval, conversational context memory, and document synthesis. Across empirical micro- and macro-benchmarks, CarnetLM achieves a token ingestion throughput exceeding **200,000 chunks/sec** (258 MB/s), an embedding inference speed of **0.02 ms per chunk** (49,640 chunks/sec in batch mode), an ultra-low hybrid retrieval latency of **20.06 ms** at $k=5$, an **MRR@5 of 1.0000** with **100% Hit Rate@3**, and a generation throughput of **27.86 Tokens Per Second (TPS)** with a mean warm Time-to-First-Token (TTFT) of **604 ms**. Furthermore, an ablation between Quality and Fast operational modes reveals a **32.3% latency reduction** while retaining complete source grounding.
+We systematically verify all 40 functional features of the system—spanning multi-notebook cryptographically partitioned vaults, multi-modal ingestion (PDF, OCR, Markdown, TXT, YouTube transcripts, clipboard), hybrid retrieval, conversational context memory, and document synthesis. Across empirical micro- and macro-benchmarks, CarnetLM achieves a token ingestion throughput exceeding **200,000 chunks/sec** (258 MB/s), an embedding inference speed of **6.68 ms per chunk** (149.62 chunks/sec in batch mode on CPU, scaling to 65,441 chunks/sec via content-hash cache replay), an ultra-low hybrid retrieval latency of **20.06 ms** at $k=5$, an **MRR@5 of 1.0000** with **100% Hit Rate@3**, and a generation throughput of **27.86 Tokens Per Second (TPS)** with a mean warm Time-to-First-Token (TTFT) of **604 ms**. Furthermore, an ablation between Quality and Fast operational modes reveals a **32.3% latency reduction** while retaining complete source grounding.
 
 **Keywords**: Retrieval-Augmented Generation (RAG), Local-First AI, Hybrid Dense-Sparse Search, Reciprocal Rank Fusion, Vector Databases, Milvus Lite, Spaced Repetition, On-Device LLM.
 
@@ -205,20 +205,20 @@ The tokenization and chunking pipeline was evaluated on a 100,000-character scie
 
 ### 4.2 Dense Embedding Generation Scalability
 
-We evaluated FastEmbed (`BAAI/bge-small-en-v1.5`) running under ONNX Runtime with increasing batch sizes ($B \in \{1, 8, 16, 32, 64\}$).
+We evaluated FastEmbed (`BAAI/bge-small-en-v1.5`) running under ONNX Runtime across batch sizes ($B \in \{1, 8, 16, 32, 64\}$), distinguishing cold model inference (cache disabled) from warm replay (cache enabled).
 
-#### Table 2: Embedding Inference Scalability vs. Batch Size
-| Batch Size ($B$) | Total Latency (ms) | Per-Chunk Latency (ms) | Embedding Throughput (Chunks/sec) | Speedup vs. Single |
-|:---:|:---:|:---:|:---:|:---:|
-| **1** | 0.11 ms | 0.110 ms | 9,328.36 | $1.00\times$ |
-| **8** | 0.23 ms | 0.029 ms | 34,891.84 | $3.74\times$ |
-| **16** | 0.36 ms | 0.022 ms | 44,710.22 | $4.79\times$ |
-| **32** | 0.87 ms | 0.027 ms | 36,871.46 | $3.95\times$ |
-| **64** | 1.29 ms | 0.020 ms | 49,640.11 | $5.32\times$ |
+#### Table 2: Embedding Inference Scalability vs. Batch Size (Cache OFF vs. Cache ON)
+| Batch Size ($B$) | Cache OFF Total Latency (ms) | Cache OFF Per-Chunk Latency (ms) | Cache OFF Throughput (Chunks/sec) | Real Speedup | Cache ON Total Latency (ms) | Cache ON Per-Chunk Latency (ms) | Cache ON Throughput (Chunks/sec) |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **1** | 20.88 ms | 20.88 ms | 47.88 | $1.00\times$ | 0.13 ms | 0.129 ms | 7,782.10 |
+| **8** | 68.86 ms | 8.61 ms | 116.18 | $2.43\times$ | 0.21 ms | 0.027 ms | 37,435.66 |
+| **16** | 120.37 ms | 7.52 ms | 132.93 | $2.78\times$ | 0.30 ms | 0.019 ms | 52,645.43 |
+| **32** | 219.46 ms | 6.86 ms | 145.81 | $3.05\times$ | 0.51 ms | 0.016 ms | 62,705.75 |
+| **64** | 427.74 ms | 6.68 ms | 149.62 | $3.12\times$ | 0.98 ms | 0.015 ms | 65,441.01 |
 
-*Fig. 6: Embedding throughput vs. batch size ($B=1$ to $64$). Demonstrates $5.32\times$ throughput speedup peaking at $49,640\text{ chunks/sec}$ on CPU SIMD execution.*
+*Fig. 6: Embedding throughput vs. batch size ($B=1$ to $64$). Demonstrates $3.12\times$ throughput speedup peaking at $149.62\text{ chunks/sec}$ on CPU SIMD execution (with SQLite warm cache replay scaling to $65,441\text{ chunks/sec}$).*
 
-*Observation*: Scaling the embedding batch size from 1 to 64 yields a **$5.32\times$ throughput improvement**, peaking at **49,640 chunks per second** with a per-chunk latency of just **0.02 ms**. This confirms the efficiency of ONNX runtime vectorization on modern CPU SIMD instruction sets.
+*Observation*: Scaling the embedding batch size from 1 to 64 yields a **$3.12\times$ throughput improvement** under real ONNX transformer inference, peaking at **149.62 chunks per second** with a per-chunk latency of **6.68 ms** (down from 20.88 ms for unbatched single chunks). For repeated document re-indexing, the local SQLite content-hash cache serves precomputed embeddings at up to **65,441 chunks per second** (0.015 ms per chunk).
 
 ---
 
@@ -275,30 +275,32 @@ Inference performance was evaluated on the local `qwen2.5:7b` model under 4-bit 
 
 ### 4.6 End-to-End RAG Pipeline Latency Breakdown
 
-To pinpoint latency bottlenecks, an end-to-end RAG query (*"How does Shor's algorithm achieve prime factorization?"*) was instrumented and decomposed into its constituent stages.
+To pinpoint latency bottlenecks, an end-to-end RAG query (*"How does Shor's algorithm achieve prime factorization?"*) was instrumented and decomposed into its constituent stages under both cold uncached and warm cached query embedding execution.
 
 #### Table 6: Component Latency Decomposition of an End-to-End RAG Query
 | Pipeline Stage | Absolute Latency (ms) | Relative Contribution (%) | Primary Bottleneck |
 |:---|:---:|:---:|:---|
-| **1. Query Embedding** | 0.27 ms | < 0.01% | FastEmbed CPU Inference |
+| **1a. Query Embedding (Uncached / Cold)** | **21.29 ms** | **0.36%** | FastEmbed ONNX CPU Forward Pass |
+| **1b. Query Embedding (Warm Cache Hit)** | 0.27 ms | < 0.01% | SQLite BLOB Unpack / Content-Hash Cache |
 | **2. Hybrid Retrieval (Dense+BM25+RRF)** | 35.11 ms | 0.59% | Milvus Lite Disk Vector Scan |
 | **3. Context Formatting & Prompt Assembly**| 0.07 ms | < 0.01% | In-Memory Text Serialization |
-| **4. LLM Generation (Autoregressive)** | 5,927.37 ms | **99.40%** | Neural Weights Multi-Head Attention |
-| **Total End-to-End Query Latency** | **5,962.81 ms** | **100.00%** | **LLM Generation** |
+| **4. LLM Generation (Autoregressive)** | 5,927.37 ms | **99.04%** | Neural Weights Multi-Head Attention |
+| **Total End-to-End Latency (Cold Embed)** | **5,983.84 ms** | **100.00%** | Full Turnaround (Uncached Inference) |
+| **Total End-to-End Latency (Warm Embed)** | **5,962.81 ms** | **100.00%** | Full Turnaround (Cached Inference) |
 
 ```
-[Query Latency Composition]
+[Query Latency Composition (Uncached Query Embedding)]
 +-------------------------------------------------------------------------+
-| LLM Autoregressive Generation: 5,927.37 ms (99.40%)                     |
+| LLM Autoregressive Generation: 5,927.37 ms (99.06%)                     |
 +-------------------------------------------------------------------------+
 | Hybrid Retrieval: 35.11 ms (0.59%)                                      |
-| Embedding: 0.27 ms (<0.01%)                                             |
+| Query Embedding (Uncached): 21.29 ms (0.36%)                            |
 | Context Assembly: 0.07 ms (<0.01%)                                      |
 ```
 
-*Fig. 5: Latency decomposition showing LLM generation 99.40% vs. hybrid retrieval 0.59% vs. prompt assembly / embedding <0.01%.*
+*Fig. 5: Latency decomposition showing LLM generation 99.06% vs. hybrid retrieval 0.59% vs. prompt assembly / query embedding 0.36%.*
 
-*Critical Research Finding*: **99.4% of total RAG latency resides in autoregressive LLM token generation**, while retrieval and embedding operations consume less than 0.6% (35.45 ms). Optimizations targeting retrieval speed yield marginal perceptible gains compared to speculative decoding, prompt caching, or streaming generation.
+*Critical Research Finding*: **Over 99.0% of total RAG latency resides in autoregressive LLM token generation**, while retrieval and uncached embedding operations consume less than 1.0% (56.40 ms). Optimizations targeting retrieval speed yield marginal perceptible gains compared to speculative decoding, prompt caching, or streaming generation.
 
 ---
 
@@ -338,7 +340,7 @@ CarnetLM incorporates two distinct operational profiles:
 
 ### 5.1 Key Findings & Architectural Strengths
 1. **Total Local Privacy with Zero Cloud Egress**: CarnetLM functions entirely on-device, resolving compliance, GDPR, and non-disclosure concerns inherent in uploading proprietary academic literature to third-party APIs.
-2. **Microsecond Ingestion & Embedding**: The FastEmbed ONNX transformer pipeline achieves 49,640 chunks/sec, ensuring that multi-hundred-page research manuscripts are indexed within seconds of upload.
+2. **Sub-Second Ingestion & Embedding**: The FastEmbed ONNX transformer pipeline achieves 149.62 chunks/sec on CPU ($6.68\text{ ms/chunk}$ at batch 64), scaling to 65,441 chunks/sec when re-indexing cached content, ensuring multi-hundred-page research manuscripts are indexed within seconds of upload.
 3. **Sub-40ms Retrieval Ceiling**: Dense-sparse hybrid search completes in 35 ms, proving that local embedded vector engines (Milvus Lite) rival dedicated client-server database clusters for single-user workspaces.
 4. **Resilient Multimodal Ingestion**: Integrated OCR, document parsers, and YouTube transcript crawlers allow unified cross-medium research synthesis.
 

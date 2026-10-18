@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "64"))
+DEFAULT_USE_CACHE = os.getenv("EMBED_USE_CACHE", "true").lower() in ("true", "1", "yes")
 
 
 @dataclass
@@ -42,12 +43,18 @@ class EmbeddedChunk:
 
 
 class EmbeddingGenerator:
-    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5", batch_size: Optional[int] = None):
+    def __init__(
+        self,
+        model_name: str = "BAAI/bge-small-en-v1.5",
+        batch_size: Optional[int] = None,
+        use_cache: Optional[bool] = None,
+    ):
         self.model_name = model_name
         self.batch_size = batch_size or DEFAULT_BATCH_SIZE
+        self.use_cache = DEFAULT_USE_CACHE if use_cache is None else use_cache
         self.model: Any = None
         self.embedding_dim: int = 384
-        self._cache = EmbedCache()
+        self._cache = EmbedCache() if self.use_cache else None
         self._initialize_model()
 
     def _initialize_model(self):
@@ -93,33 +100,47 @@ class EmbeddingGenerator:
             for i in range(0, total, bs):
                 sub_batch = chunks[i:i + bs]
                 texts = [chunk.content for chunk in sub_batch]
-                cached, miss_indices = self._cache.get_many(texts, self.model_name)
 
-                to_embed_texts: List[str] = []
-                to_embed_indices: List[int] = []
-                for j, vec in enumerate(cached):
-                    if vec is None:
-                        to_embed_indices.append(j)
-                        to_embed_texts.append(texts[j])
+                if self.use_cache and self._cache is not None:
+                    cached, miss_indices = self._cache.get_many(texts, self.model_name)
 
-                fresh_vectors: List[np.ndarray] = []
-                if to_embed_texts:
-                    fresh_vectors = [
-                        np.array(v, dtype=np.float32) for v in self.model.embed(to_embed_texts)
-                    ]
-                    self._cache.put_many(to_embed_texts, self.model_name, fresh_vectors)
+                    to_embed_texts: List[str] = []
+                    to_embed_indices: List[int] = []
+                    for j, vec in enumerate(cached):
+                        if vec is None:
+                            to_embed_indices.append(j)
+                            to_embed_texts.append(texts[j])
 
-                miss_map = {idx: fresh_vectors[k] for k, idx in enumerate(to_embed_indices)}
-                for j, chunk in enumerate(sub_batch):
-                    cached_vec = cached[j]
-                    embedding = cached_vec if cached_vec is not None else miss_map[j]
-                    embedded_chunks.append(
-                        EmbeddedChunk(
-                            chunk=chunk,
-                            embedding=embedding,
-                            embedding_model=self.model_name,
+                    fresh_vectors: List[np.ndarray] = []
+                    if to_embed_texts:
+                        fresh_vectors = [
+                            np.array(v, dtype=np.float32) for v in self.model.embed(to_embed_texts)
+                        ]
+                        self._cache.put_many(to_embed_texts, self.model_name, fresh_vectors)
+
+                    miss_map = {idx: fresh_vectors[k] for k, idx in enumerate(to_embed_indices)}
+                    for j, chunk in enumerate(sub_batch):
+                        cached_vec = cached[j]
+                        embedding = cached_vec if cached_vec is not None else miss_map[j]
+                        embedded_chunks.append(
+                            EmbeddedChunk(
+                                chunk=chunk,
+                                embedding=embedding,
+                                embedding_model=self.model_name,
+                            )
                         )
-                    )
+                else:
+                    raw_vectors = [
+                        np.array(v, dtype=np.float32) for v in self.model.embed(texts)
+                    ]
+                    for chunk, vec in zip(sub_batch, raw_vectors):
+                        embedded_chunks.append(
+                            EmbeddedChunk(
+                                chunk=chunk,
+                                embedding=vec,
+                                embedding_model=self.model_name,
+                            )
+                        )
 
                 done = min(i + len(sub_batch), total)
                 if on_batch:
@@ -135,12 +156,14 @@ class EmbeddingGenerator:
 
     def generate_query_embedding(self, query_text: str) -> np.ndarray:
         try:
-            cached, miss = self._cache.get_many([query_text], self.model_name)
-            if cached[0] is not None:
-                return cached[0]
+            if self.use_cache and self._cache is not None:
+                cached, miss = self._cache.get_many([query_text], self.model_name)
+                if cached and cached[0] is not None:
+                    return cached[0]
             embedding = list(self.model.embed([query_text]))[0]
             vec = np.array(embedding, dtype=np.float32)
-            self._cache.put_many([query_text], self.model_name, [vec])
+            if self.use_cache and self._cache is not None:
+                self._cache.put_many([query_text], self.model_name, [vec])
             return vec
 
         except Exception as e:
